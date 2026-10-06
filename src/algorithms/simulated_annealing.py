@@ -23,7 +23,7 @@ def simulated_annealing(
     best = current.copy()
     history = {
         "objective": [],
-        "probability": [],
+        "exp_delta_e_over_t": [],
         "temperature": [],
         "stuck": [],
         "stuck_frequency": 0,
@@ -43,18 +43,18 @@ def simulated_annealing(
         next_state = random.choice(neighbors)
         delta_e = objective_value(next_state) - current_value
         try:
-            probability = math.exp(delta_e / temperature)
+            exp_delta_e_over_t = math.exp(delta_e / temperature)
         except OverflowError:
-            probability = math.inf
+            exp_delta_e_over_t = math.inf
 
-        if min(1.0, probability) > random.random():
+        if min(1.0, exp_delta_e_over_t) > random.random():
             current = next_state
 
         if objective_value(current) > objective_value(best):
             best = current.copy()
 
         history["objective"].append(objective_value(current))
-        history["probability"].append(probability)
+        history["exp_delta_e_over_t"].append(exp_delta_e_over_t)
         history["temperature"].append(temperature)
         history["stuck"].append(is_stuck)
         history["stuck_frequency"] += is_stuck
