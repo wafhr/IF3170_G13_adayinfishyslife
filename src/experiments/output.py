@@ -10,6 +10,7 @@ def state_data(state: State) -> dict:
         "packages": [
             {
                 "id": package.id,
+                "eta": package.eta,
                 "position": list(package.position),
                 "orientation": package.orientation,
             }
@@ -29,7 +30,7 @@ def result_data(
     history: dict,
 ) -> dict:
     objectives = history.get("objective", history.get("max_objective", []))
-    iterations = len(objectives) if isinstance(objectives, list) else 0
+    iterations = history.get("iterations", len(objectives) if isinstance(objectives, list) else 0)
     return {
         "algorithm": algorithm,
         "run_name": run_name,

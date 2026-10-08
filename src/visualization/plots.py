@@ -59,7 +59,7 @@ def objective_figure(history: Mapping[str, Any], dark: bool = False) -> go.Figur
     if series is None:
         return None
 
-    return _line_figure(
+    figure = _line_figure(
         series,
         "Objective Value terhadap Iterasi",
         "Objective Value",
@@ -67,6 +67,19 @@ def objective_figure(history: Mapping[str, Any], dark: bool = False) -> go.Figur
         "#1f77b4",
         dark,
     )
+
+    runs = history.get("runs")
+    if isinstance(runs, list) and runs:
+        figure.data = ()
+        for run in runs:
+            figure.add_trace(go.Scatter(
+                x=run["iteration"], y=run["objective"], mode="lines+markers",
+                name=f"Run {run['run_index']} (0 = awal)",
+            ))
+        figure.update_xaxes(title_text="Iterasi dalam masing-masing run")
+    elif isinstance(history.get("iteration"), list):
+        figure.data[0].x = history["iteration"]
+    return figure
 
 
 def annealing_probability_figure(history: Mapping[str, Any], dark: bool = False) -> go.Figure | None:
