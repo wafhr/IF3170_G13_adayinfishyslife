@@ -22,11 +22,14 @@ class Package:
     isFragile: bool = False
     position: tuple[int, int, int] = (0, 0, 0)
     orientation: dict[str, str] = field(default_factory=lambda: {"w": "x", "l": "y", "h": "z"})
+    eta: int = 0  # Sisa hari; default 0 untuk pemanggilan lama.
 
     def __post_init__(self):
         if (not isinstance(self.dimensions, dict) or set(self.dimensions) != {"w", "l", "h"} or any(type(size) is not int or size <= 0 for size in self.dimensions.values())):
             raise ValueError("Dimensions harus berisi w, l, h berupa bilangan bulat positif.")
         self.dimensions = self.dimensions.copy()
+        if type(self.eta) is not int or self.eta < 0:
+            raise ValueError("ETA harus berupa bilangan bulat non-negatif (sisa hari).")
         if self.value < 0 or self.weight < 0:
             raise ValueError("Value dan weight paket tidak boleh negatif.")
         if (not isinstance(self.position, tuple) or len(self.position) != 3 or any(type(p) is not int for p in self.position)):

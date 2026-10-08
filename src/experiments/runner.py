@@ -23,6 +23,7 @@ def load_problem(path: Path) -> tuple[Truck, list[Package]]:
             value=package["value"],
             weight=package["weight"],
             isFragile=package["is_fragile"],
+            eta=package.get("eta", 0),
         )
         for package in problem["packages"]
     ]
