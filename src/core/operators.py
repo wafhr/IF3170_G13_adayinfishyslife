@@ -38,7 +38,7 @@ def random_initial_state(truck: Truck, packages: list[Package], seed: int | None
             # Paket harus ada supportnya
             levels = {0}
             for other in state.packages:
-                if other.id != package.id and state.is_inside(other) and not other.is_fragile:
+                if other.id != package.id and state.is_inside(other) and not other.isFragile:
                     top = state.bounds(other)[1][2]
                     if top <= max_z:
                         levels.add(top)
