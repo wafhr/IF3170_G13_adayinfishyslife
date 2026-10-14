@@ -1,0 +1,231 @@
+"""Genetic algorithm for the truck loading problem."""
+
+from __future__ import annotations
+
+import random
+import time
+from dataclasses import replace
+from typing import Any
+
+from core.evaluation import is_valid, objective_value
+from core.operators import outside_position, random_initial_state
+from core.state import ORIENTATIONS, Package, State, Truck
+
+
+def _fitness(state: State) -> float:
+    return objective_value(state)
+
+
+def _place_genes(
+    truck: Truck,
+    template: list[Package],
+    genes: list[tuple[tuple[int, int, int], dict[str, str], bool]],
+    rng: random.Random,
+    repair_attempts: int,
+) -> State:
+    """Build a valid state from inherited genes, repairing placements as needed."""
+    state = State(truck, [replace(p) for p in template])
+    for i, package in enumerate(state.packages):
+        package.position = outside_position(state, i)
+
+    # Place valuable packages first so repair preserves the strongest genes.
+    order = sorted(range(len(state.packages)), key=lambda i: state.packages[i].value, reverse=True)
+    for i in order:
+        position, orientation, wanted_inside = genes[i]
+        package = state.packages[i]
+        if not wanted_inside:
+            package.orientation = orientation.copy()
+            continue
+
+        package.position = position
+        package.orientation = orientation.copy()
+        if is_valid(state):
+            continue
+        package.position = outside_position(state, i)
+
+        # A parent's exact placement may no longer fit after crossover. Try a
+        # bounded set of fresh placements before leaving this package outside.
+        for _ in range(repair_attempts):
+            package.orientation = rng.choice(ORIENTATIONS).copy()
+            width, length, height = package.oriented_dimensions()
+            max_x = truck.dimensions["w"] - width
+            max_y = truck.dimensions["l"] - length
+            max_z = truck.dimensions["h"] - height
+            if min(max_x, max_y, max_z) < 0:
+                continue
+            levels = {0}
+            for other in state.packages:
+                if other.id != package.id and state.is_inside(other) and not other.isFragile:
+                    top = state.bounds(other)[1][2]
+                    if top <= max_z:
+                        levels.add(top)
+            package.position = (
+                rng.randint(0, max_x),
+                rng.randint(0, max_y),
+                rng.choice(sorted(levels)),
+            )
+            if is_valid(state):
+                break
+            package.position = outside_position(state, i)
+    return state
+
+
+def _genes_from(state: State) -> list[tuple[tuple[int, int, int], dict[str, str], bool]]:
+    return [
+        (p.position, p.orientation.copy(), state.is_inside(p))
+        for p in state.packages
+    ]
+
+
+def _crossover(
+    first: State,
+    second: State,
+    rng: random.Random,
+    repair_attempts: int,
+) -> State:
+    genes_a, genes_b = _genes_from(first), _genes_from(second)
+    genes = [rng.choice((a, b)) for a, b in zip(genes_a, genes_b)]
+    return _place_genes(first.truck, first.packages, genes, rng, repair_attempts)
+
+
+def _mutate(state: State, rng: random.Random, repair_attempts: int) -> State:
+    genes = _genes_from(state)
+    index = rng.randrange(len(genes))
+    position, orientation, inside = genes[index]
+    operation = rng.choice(("move", "rotate", "remove", "insert"))
+    if operation == "remove":
+        inside = False
+    elif operation == "insert":
+        inside = True
+    elif operation == "rotate":
+        orientation = rng.choice(ORIENTATIONS).copy()
+    else:
+        package = state.packages[index]
+        width, length, height = package.oriented_dimensions()
+        max_x = state.truck.dimensions["w"] - width
+        max_y = state.truck.dimensions["l"] - length
+        max_z = state.truck.dimensions["h"] - height
+        if min(max_x, max_y, max_z) >= 0:
+            position = (rng.randint(0, max_x), rng.randint(0, max_y), rng.randint(0, max_z))
+            inside = True
+    genes[index] = (position, orientation, inside)
+    return _place_genes(state.truck, state.packages, genes, rng, repair_attempts)
+
+
+def genetic_algorithm(
+    truck: Truck,
+    packages: list[Package],
+    population_size: int = 40,
+    iterations: int = 100,
+    mutation_rate: float = 0.15,
+    elite_size: int = 2,
+    tournament_size: int = 3,
+    repair_attempts: int = 40,
+    seed: int | None = None,
+) -> dict[str, Any]:
+    """Run GA and return best states plus per-generation max/average fitness."""
+    if type(population_size) is not int or population_size < 2:
+        raise ValueError("population_size harus bilangan bulat minimal 2.")
+    if type(iterations) is not int or iterations < 0:
+        raise ValueError("iterations harus bilangan bulat nonnegatif.")
+    if not 0 <= mutation_rate <= 1:
+        raise ValueError("mutation_rate harus berada pada rentang 0 sampai 1.")
+    if type(elite_size) is not int or not 1 <= elite_size < population_size:
+        raise ValueError("elite_size harus minimal 1 dan lebih kecil dari population_size.")
+    if type(tournament_size) is not int or tournament_size < 1:
+        raise ValueError("tournament_size harus bilangan bulat positif.")
+    if type(repair_attempts) is not int or repair_attempts < 1:
+        raise ValueError("repair_attempts harus bilangan bulat positif.")
+
+    rng = random.Random(seed)
+    started = time.perf_counter()
+    population = [
+        random_initial_state(truck, packages, seed=rng.randrange(2**32))
+        for _ in range(population_size)
+    ]
+    if not all(is_valid(individual) for individual in population):
+        raise RuntimeError("Inisialisasi menghasilkan state yang tidak valid.")
+    initial_population = [individual.copy() for individual in population]
+    max_history: list[float] = []
+    average_history: list[float] = []
+
+    def record() -> None:
+        scores = [_fitness(individual) for individual in population]
+        max_history.append(max(scores, default=0.0))
+        average_history.append(sum(scores) / len(scores) if scores else 0.0)
+
+    record()
+    for _ in range(iterations):
+        ranked = sorted(population, key=_fitness, reverse=True)
+        next_population = [individual.copy() for individual in ranked[:elite_size]]
+        while len(next_population) < population_size:
+            pool = rng.sample(population, min(tournament_size, len(population)))
+            parent_a = max(pool, key=_fitness)
+            pool = rng.sample(population, min(tournament_size, len(population)))
+            parent_b = max(pool, key=_fitness)
+            child = _crossover(parent_a, parent_b, rng, repair_attempts)
+            if rng.random() < mutation_rate and child.packages:
+                child = _mutate(child, rng, repair_attempts)
+            next_population.append(child)
+        population = next_population
+        record()
+
+    best = max(population, key=_fitness)
+    return {
+        "initial_population": initial_population,
+        "best_initial_state": max(initial_population, key=_fitness).copy(),
+        "final_state": best.copy(),
+        "final_value": _fitness(best),
+        "max_history": max_history,
+        "average_history": average_history,
+        "population_size": population_size,
+        "iterations": iterations,
+        "duration_seconds": time.perf_counter() - started,
+        "seed": seed,
+    }
+
+
+def run_genetic_experiments(
+    truck: Truck,
+    packages: list[Package],
+    iteration_values: list[int],
+    population_values: list[int],
+    repetitions: int = 3,
+    fixed_population_size: int = 40,
+    fixed_iterations: int = 100,
+    seed: int | None = None,
+    **ga_options: Any,
+) -> dict[str, list[dict[str, Any]]]:
+    """Run the two required one-parameter-at-a-time GA experiments."""
+    if type(repetitions) is not int or repetitions < 1:
+        raise ValueError("repetitions harus bilangan bulat positif.")
+    rng = random.Random(seed)
+
+    def run_configs(configs: list[tuple[int, int]]) -> list[dict[str, Any]]:
+        records = []
+        for pop_size, generations in configs:
+            for run_index in range(repetitions):
+                result = genetic_algorithm(
+                    truck,
+                    packages,
+                    population_size=pop_size,
+                    iterations=generations,
+                    seed=rng.randrange(2**32),
+                    **ga_options,
+                )
+                records.append({
+                    "population_size": pop_size,
+                    "iterations": generations,
+                    "run": run_index + 1,
+                    **result,
+                })
+        return records
+
+    return {
+        "vary_iterations": run_configs([
+            (fixed_population_size, count) for count in iteration_values
+        ]),
+        "vary_population": run_configs([
+            (count, fixed_iterations) for count in population_values
+        ]),
+    }
