@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sys
 from collections.abc import Mapping, Sequence
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +19,25 @@ if str(SRC_DIRECTORY) not in sys.path:
 from experiments.output import unique_result_path, write_result
 from experiments.runner import ALGORITHM_NAMES, run_selected_experiment
 from visualization.plots import annealing_probability_figure, genetic_objective_figure, objective_figure
-from visualization.state_view import create_state_figure
+from visualization.state_view import create_state_figure, state_package_rows
 
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 OUTPUT_DIRECTORY = PROJECT_ROOT / "output"
 PROBLEM_FILE = PROJECT_ROOT / "config" / "problem.json"
+SEED_DEFAULT = 42
+PARAMETER_DEFAULTS = {
+    "simulated_annealing": {
+        "initial_temperature": 100.0,
+        "cooling_rate": 0.95,
+        "max_iterations": 50,
+    },
+    "random_restart": {"max_restarts": 10, "max_attempts": 50},
+    "stochastic": {"nmax": 100},
+    "sideways": {"max_sideways": 100},
+    "genetic_algorithm": {"population_size": 40, "iterations": 100},
+}
 
 
 def load_problem(path: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -61,30 +75,58 @@ def is_genetic_algorithm(algorithm: str) -> bool:
     return "genetic" in normalized or normalized.strip() == "ga"
 
 
+def format_number(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return "Tidak tersedia"
+    return f"{value:g}"
+
+
+def format_position(value: Any) -> str:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 3:
+        return "Tidak tersedia"
+    return "(" + ", ".join(format_number(part) for part in value) + ")"
+
+
 def display_metric(column: Any, label: str, value: Any, suffix: str = "") -> None:
-    if value is None:
-        column.metric(label, "Tidak tersedia")
-    else:
-        column.metric(label, f"{value}{suffix}")
-
-
-def render_state(title: str, key: str, problem: Mapping[str, Any], state: Any, show_outside: bool) -> None:
-    st.subheader(title)
-    figure, warning = create_state_figure(problem, state, show_outside=show_outside)
-    if figure is None:
-        st.warning(warning or "State tidak dapat divisualisasikan.")
-        return
-
-    st.plotly_chart(figure, width="stretch", theme=None, key=key)
-    if warning:
-        st.warning(warning)
+    column.metric(label, "Tidak tersedia" if value is None else f"{value}{suffix}")
 
 
 def clear_last_run() -> None:
     st.session_state.pop("last_run", None)
+    st.session_state.pop("selected_package_id", None)
 
 
-def run_controls() -> tuple[str | None, int | None, dict[str, Any], bool]:
+def reset_parameters(algorithm: str) -> None:
+    st.session_state["run_seed"] = SEED_DEFAULT
+    for parameter, value in PARAMETER_DEFAULTS.get(algorithm, {}).items():
+        st.session_state[f"parameter_{algorithm}_{parameter}"] = value
+
+
+def parameter_input(
+    algorithm: str,
+    name: str,
+    label: str,
+    default: int | float,
+    help_text: str,
+    *,
+    minimum: int | float,
+    step: int | float,
+    maximum: int | float | None = None,
+) -> int | float:
+    key = f"parameter_{algorithm}_{name}"
+    st.session_state.setdefault(key, default)
+    arguments: dict[str, Any] = {
+        "min_value": minimum,
+        "step": step,
+        "key": key,
+        "help": help_text,
+    }
+    if maximum is not None:
+        arguments["max_value"] = maximum
+    return st.number_input(label, **arguments)
+
+
+def run_controls() -> tuple[str | None, int, dict[str, Any], bool]:
     algorithm = st.sidebar.selectbox(
         "Algoritma",
         ALGORITHM_NAMES,
@@ -95,119 +137,309 @@ def run_controls() -> tuple[str | None, int | None, dict[str, Any], bool]:
         on_change=clear_last_run,
     )
     if algorithm is None:
-        return None, None, {}, False
+        return None, SEED_DEFAULT, {}, False
 
+    st.session_state.setdefault("run_seed", SEED_DEFAULT)
     parameters: dict[str, Any] = {}
     with st.sidebar.form("run_experiment", enter_to_submit=False):
-        seed = st.number_input("Seed", min_value=0, value=None, step=1, placeholder="Masukkan seed")
+        seed = st.number_input(
+            "Seed", min_value=0, step=1, key="run_seed",
+            help="Seed membuat eksperimen acak dapat diulang dengan hasil yang sama.",
+        )
         if algorithm == "simulated_annealing":
-            parameters["initial_temperature"] = st.number_input(
-                "Temperatur awal", min_value=0.0, value=None, step=10.0, placeholder="Masukkan temperatur awal"
+            parameters["initial_temperature"] = parameter_input(
+                algorithm, "initial_temperature", "Temperatur awal", 100.0,
+                "Suhu awal yang mengatur peluang menerima langkah yang lebih buruk.", minimum=0.0, step=10.0,
             )
-            parameters["cooling_rate"] = st.number_input(
-                "Cooling rate", min_value=0.001, max_value=1.0, value=None, step=0.01,
-                placeholder="Masukkan cooling rate",
+            parameters["cooling_rate"] = parameter_input(
+                algorithm, "cooling_rate", "Cooling rate", 0.95,
+                "Faktor pendinginan tiap iterasi; nilai dekat 1 mendingin lebih lambat.",
+                minimum=0.001, maximum=1.0, step=0.01,
             )
-            parameters["max_iterations"] = st.number_input(
-                "Jumlah iterasi", min_value=0, value=None, step=1, placeholder="Masukkan jumlah iterasi"
+            parameters["max_iterations"] = parameter_input(
+                algorithm, "max_iterations", "Jumlah iterasi", 50,
+                "Batas maksimum langkah Simulated Annealing.", minimum=0, step=1,
             )
         elif algorithm == "random_restart":
-            parameters["max_restarts"] = st.number_input(
-                "Maksimum restart", min_value=0, value=None, step=1, placeholder="Masukkan maksimum restart"
+            parameters["max_restarts"] = parameter_input(
+                algorithm, "max_restarts", "Maksimum restart", 10,
+                "Jumlah restart setelah pencarian awal.", minimum=0, step=1,
             )
-            parameters["max_attempts"] = st.number_input(
-                "Maksimum percobaan state", min_value=1, value=None, step=1,
-                placeholder="Masukkan maksimum percobaan state",
+            parameters["max_attempts"] = parameter_input(
+                algorithm, "max_attempts", "Maksimum percobaan state", 50,
+                "Batas percobaan untuk membentuk setiap state awal baru.", minimum=1, step=1,
             )
         elif algorithm == "stochastic":
-            parameters["nmax"] = st.number_input(
-                "Maksimum percobaan", min_value=0, value=None, step=1, placeholder="Masukkan maksimum percobaan"
+            parameters["nmax"] = parameter_input(
+                algorithm, "nmax", "Maksimum percobaan", 100,
+                "Jumlah maksimum proposal langkah acak.", minimum=0, step=1,
             )
         elif algorithm == "sideways":
-            parameters["max_sideways"] = st.number_input(
-                "Maksimum sideways move", min_value=0, value=None, step=1,
-                placeholder="Masukkan maksimum sideways move",
+            parameters["max_sideways"] = parameter_input(
+                algorithm, "max_sideways", "Maksimum sideways move", 100,
+                "Batas langkah dengan objective yang sama.", minimum=0, step=1,
             )
         elif algorithm == "genetic_algorithm":
-            parameters["population_size"] = st.number_input(
-                "Ukuran populasi", min_value=2, value=None, step=1, placeholder="Masukkan ukuran populasi"
+            parameters["population_size"] = parameter_input(
+                algorithm, "population_size", "Ukuran populasi", 40,
+                "Jumlah kandidat state pada setiap generasi.", minimum=2, step=1,
             )
-            parameters["iterations"] = st.number_input(
-                "Jumlah iterasi", min_value=0, value=None, step=1, placeholder="Masukkan jumlah iterasi"
+            parameters["iterations"] = parameter_input(
+                algorithm, "iterations", "Jumlah generasi", 100,
+                "Banyak generasi yang dijalankan.", minimum=0, step=1,
             )
         submitted = st.form_submit_button("Jalankan", type="primary", use_container_width=True)
 
-    return algorithm, seed, parameters, submitted
+    st.sidebar.button(
+        "Reset ke default",
+        on_click=reset_parameters,
+        args=(algorithm,),
+        use_container_width=True,
+    )
+    return algorithm, int(seed), parameters, submitted
 
 
-def render_result(result: Mapping[str, Any], problem: Mapping[str, Any], show_outside: bool) -> None:
-    algorithm = str(result.get("algorithm", "Tidak diketahui"))
-    history = history_from(result)
-    run_name = str(result.get("run_name", "Run terbaru"))
-    chart_prefix = run_name
+def state_metrics(container: Any, rows: list[dict[str, Any]], capacity: Any) -> None:
+    inside = [row for row in rows if row["status"] == "Di dalam truk"]
+    total_value = sum(
+        value for row in inside
+        if isinstance((value := row["value"]), (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    )
+    loaded_weight = sum(
+        weight for row in inside
+        if isinstance((weight := row["weight"]), (int, float)) and not isinstance(weight, bool)
+        and math.isfinite(weight)
+    )
+    with container:
+        columns = st.columns(3)
+        columns[0].metric("Total value", format_number(total_value))
+        columns[1].metric("Paket di dalam / total", f"{len(inside)} / {len(rows)}")
+        columns[2].metric("Berat / kapasitas", f"{format_number(loaded_weight)}/{format_number(capacity)}")
 
-    st.header(display_algorithm(algorithm))
-    st.caption(f"Run: {run_name}")
 
-    final_objective = result.get("final_objective")
-    duration = result.get("duration_seconds", result.get("duration"))
-    iterations = result.get("iterations")
-    if iterations is None and isinstance(history.get("objective"), Sequence):
-        iterations = len(history["objective"])
+def table_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "ID": row["id"],
+            "Posisi (x, y, z)": format_position(row["position"]),
+            "Berat": row["weight"],
+            "Value": row["value"],
+            "Fragile": "Ya" if row["is_fragile"] else "Tidak",
+            "ETA": row["eta"],
+            "Status": row["status"],
+        }
+        for row in rows
+    ]
 
-    summary_columns = st.columns(3)
-    display_metric(summary_columns[0], "Final Objective", final_objective)
-    display_metric(summary_columns[1], "Durasi", duration, " s")
-    display_metric(summary_columns[2], "Jumlah Iterasi", iterations)
 
+def render_package_details(container: Any, package_id: str | None, rows: list[dict[str, Any]], state_label: str) -> None:
+    with container:
+        st.markdown('<div class="package-inspector-heading">Detail paket</div>', unsafe_allow_html=True)
+        row = next((item for item in rows if item["id"] == package_id), None)
+        if row is None:
+            body = '<div class="package-inspector__hint">Pilih baris paket pada tabel untuk melihat detailnya.</div>'
+        else:
+            title = escape(f"{row['id']} · {state_label}")
+            details = (
+                ("Posisi", format_position(row["position"])),
+                ("Berat", format_number(row["weight"])),
+                ("Value", format_number(row["value"])),
+                ("Fragile", "Ya" if row["is_fragile"] else "Tidak"),
+                ("ETA", str(row["eta"])),
+                ("Status", str(row["status"])),
+            )
+            rows_html = "".join(
+                f'<div class="package-inspector__row"><span>{escape(label)}</span>'
+                f'<strong>{escape(value)}</strong></div>'
+                for label, value in details
+            )
+            body = (
+                f'<div class="package-inspector__title">{title}</div>'
+                f'<div class="package-inspector__grid">{rows_html}</div>'
+            )
+
+        st.markdown(f'<div class="package-inspector-card">{body}</div>', unsafe_allow_html=True)
+
+
+def visible_package_rows(rows: list[dict[str, Any]], package_filter: str) -> list[dict[str, Any]]:
+    if package_filter == "Di dalam truk":
+        return [row for row in rows if row["status"] == "Di dalam truk"]
+    if package_filter == "Di luar truk":
+        return [row for row in rows if row["status"] != "Di dalam truk"]
+    return rows
+
+
+def render_state_chart(
+    container: Any,
+    title: str,
+    key: str,
+    problem: Mapping[str, Any],
+    state: Any,
+    package_filter: str,
+    selected_package_id: str | None,
+) -> None:
+    with container:
+        st.subheader(title)
+        figure, warning = create_state_figure(
+            problem,
+            state,
+            package_filter=package_filter,
+            selected_package_id=selected_package_id,
+        )
+        if figure is None:
+            st.warning(warning or "State tidak dapat divisualisasikan.")
+            return
+        st.plotly_chart(figure, width="stretch", theme=None, key=key)
+        if warning:
+            st.warning(warning)
+
+
+def render_state_and_packages(
+    result: Mapping[str, Any],
+    problem: Mapping[str, Any],
+    run_key: str,
+) -> None:
+    initial_rows, initial_warning = state_package_rows(problem, result.get("initial_state"))
+    final_rows, final_warning = state_package_rows(problem, result.get("final_state"))
+    if initial_rows is None or final_rows is None:
+        st.error(initial_warning or final_warning or "State hasil tidak dapat dibaca.")
+        return
+
+    controls = st.columns([2, 1])
+    mode = controls[0].segmented_control(
+        "State", ["Initial", "Final"], default="Final", key="state_view_mode", width="stretch"
+    )
+    package_filter = controls[1].selectbox(
+        "Filter paket", ["Semua", "Di dalam truk", "Di luar truk"], key="package_filter",
+        help="Filter berlaku pada grafik 3D dan tabel paket.",
+    )
+    capacity = problem.get("truck", {}).get("max_capacity") if isinstance(problem.get("truck"), Mapping) else None
+    selected_id = st.session_state.get("selected_package_id")
+
+    if mode == "Initial":
+        state_rows = initial_rows
+    else:
+        state_rows = final_rows
+
+    displayed_rows = visible_package_rows(state_rows, package_filter)
+    visible_ids = {row["id"] for row in displayed_rows}
+    if selected_id not in visible_ids:
+        selected_id = None
+        st.session_state.pop("selected_package_id", None)
+
+    state_label = "Initial" if mode == "Initial" else "Final"
+    state_value = result.get("initial_state") if mode == "Initial" else result.get("final_state")
+    state_metrics(st.container(), state_rows, capacity)
+    chart_column, detail_column = st.columns([3, 1])
+    render_state_chart(
+        chart_column, f"{state_label} State", f"{run_key}_{state_label.lower()}_state", problem,
+        state_value, package_filter, selected_id,
+    )
+    render_package_details(detail_column, selected_id, state_rows, state_label)
+
+    if mode == "Initial":
+        warnings = (("Initial state", initial_warning),)
+    else:
+        warnings = (("Final state", final_warning),)
+    for label, warning in warnings:
+        if warning:
+            st.warning(f"{label}: {warning}")
+
+    st.subheader("Daftar paket")
+    table_key = f"packages_{run_key}_{mode}_{package_filter}"
+    table = st.dataframe(
+        table_rows(displayed_rows),
+        column_order=("ID", "Posisi (x, y, z)", "Berat", "Value", "Fragile", "ETA", "Status"),
+        hide_index=True,
+        height=220,
+        width="stretch",
+        key=table_key,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+    selected_indices = table.selection.rows
+    if selected_indices:
+        new_selected_id = displayed_rows[selected_indices[0]]["id"]
+        if new_selected_id != st.session_state.get("selected_package_id"):
+            st.session_state["selected_package_id"] = new_selected_id
+            st.rerun()
+
+
+def render_graphs(history: Mapping[str, Any], algorithm: str, run_key: str) -> None:
     if not history:
         st.warning("Field `history` tidak tersedia atau bukan object. Grafik tidak dapat dibuat.")
-    elif not is_genetic_algorithm(algorithm):
-        objective_plot = objective_figure(history)
-        if objective_plot is None:
-            st.warning("Data `history.objective` tidak tersedia atau kosong.")
-        else:
-            st.plotly_chart(objective_plot, width="stretch", theme=None, key=f"{chart_prefix}_objective")
+        return
 
-    st.divider()
-    render_state("Initial State", f"{chart_prefix}_initial_state", problem, result.get("initial_state"), show_outside)
-    render_state("Final State", f"{chart_prefix}_final_state", problem, result.get("final_state"), show_outside)
+    objective_plot = objective_figure(history)
+    if objective_plot is None and not is_genetic_algorithm(algorithm):
+        st.warning("Data `history.objective` tidak tersedia atau kosong.")
+    elif objective_plot is not None:
+        st.plotly_chart(objective_plot, width="stretch", theme=None, key=f"{run_key}_objective")
 
     if is_simulated_annealing(algorithm):
-        st.header("Simulated Annealing")
         probability_plot = annealing_probability_figure(history)
         if probability_plot is None:
             st.warning("Data `history.exp_delta_e_over_t` tidak tersedia untuk grafik probabilitas penerimaan.")
         else:
-            st.plotly_chart(
-                probability_plot, width="stretch", theme=None, key=f"{chart_prefix}_exp_delta_e_over_t"
-            )
-        display_metric(st.columns(1)[0], "Frekuensi Stuck di Local Optima", history.get("stuck_frequency"))
+            st.plotly_chart(probability_plot, width="stretch", theme=None, key=f"{run_key}_annealing")
 
     if is_genetic_algorithm(algorithm):
-        st.header("Genetic Algorithm")
-        result_parameters = result.get("parameters")
-        population_size = result.get("population_size")
-        if population_size is None and isinstance(result_parameters, Mapping):
-            population_size = result_parameters.get("population_size")
-        display_metric(st.columns(1)[0], "Ukuran Populasi", population_size)
         genetic_plot = genetic_objective_figure(history)
         if genetic_plot is None:
             st.warning("Riwayat objective maksimum/rata-rata populasi GA tidak tersedia.")
         else:
-            st.plotly_chart(genetic_plot, width="stretch", theme=None, key=f"{chart_prefix}_genetic_objective")
+            st.plotly_chart(genetic_plot, width="stretch", theme=None, key=f"{run_key}_genetic")
+
+
+def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None:
+    algorithm = str(result.get("algorithm", "Tidak diketahui"))
+    history = history_from(result)
+    run_name = str(result.get("run_name", "Run terbaru"))
+    run_key = f"{algorithm}_{run_name}"
+    iterations = result.get("iterations")
+    if iterations is None and isinstance(history.get("objective"), Sequence):
+        iterations = len(history["objective"])
+    st.header(display_algorithm(algorithm))
+    st.caption(f"Run: {run_name}")
+
+    columns = st.columns(3)
+    display_metric(columns[0], "Nilai objective", result.get("final_objective"))
+    display_metric(columns[1], "Durasi", result.get("duration_seconds", result.get("duration")), " s")
+    display_metric(columns[2], "Jumlah iterasi", iterations)
+
+    state_tab, graph_tab = st.tabs(["State & Paket", "Grafik"])
+    with state_tab:
+        render_state_and_packages(result, problem, run_key)
+    with graph_tab:
+        render_graphs(history, algorithm, run_key)
 
 
 def main() -> None:
     st.set_page_config(page_title="Eksperimen Pemuatan Truk", layout="wide")
-    st.markdown("<style>.block-container { max-width: 1600px; padding-top: 2rem; }</style>", unsafe_allow_html=True)
+    st.markdown(
+        """<style>
+        .block-container { max-width: 1600px; padding-top: 1.25rem; padding-bottom: 2rem; }
+        .stApp { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+        h1 { font-size: 1.8rem; line-height: 1.25; margin-bottom: 0.35rem; }
+        h2 { font-size: 1.3rem; line-height: 1.35; }
+        h3 { font-size: 1.05rem; line-height: 1.4; }
+        [data-testid="stMetricLabel"] { font-size: 0.85rem; }
+        [data-testid="stMetricValue"] { font-size: 1.45rem; }
+        .package-inspector-heading { font-size: 1.05rem; font-weight: 600; margin: 0 0 0.55rem; text-align: center; }
+        .package-inspector-card { box-sizing: border-box; width: 100%; border: 1px solid #d1d5db; border-radius: 0.5rem; padding: 0.35rem 0.6rem 0.7rem; font-size: 0.82rem; line-height: 1.35; }
+        .package-inspector__title { font-size: 0.95rem; font-weight: 700; text-align: center; margin: 0 0 0.35rem; }
+        .package-inspector__grid { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.3rem 0.65rem; width: 100%; max-width: 13rem; margin: 0 auto; }
+        .package-inspector__row { display: contents; }
+        .package-inspector__row span { opacity: 0.72; text-align: right; }
+        .package-inspector__row strong { text-align: left; overflow-wrap: anywhere; }
+        .package-inspector__hint { max-width: 13rem; margin: 0 auto; padding: 0.2rem 0 0.4rem; opacity: 0.72; text-align: center; }
+        </style>""",
+        unsafe_allow_html=True,
+    )
     st.title("Eksperimen Pemuatan Truk")
-    st.caption("Pilih algoritma, isi parameter, lalu jalankan untuk melihat visualisasi hasilnya.")
 
     with st.sidebar:
         st.header("Eksperimen")
-        show_outside = st.checkbox("Tampilkan paket di luar truk", value=False)
-        st.caption("Mode fokus menyesuaikan viewport ke container.")
 
     problem, problem_error = load_problem(PROBLEM_FILE)
     if problem is None:
@@ -216,14 +448,10 @@ def main() -> None:
 
     algorithm, seed, parameters, submitted = run_controls()
     if algorithm is None:
-        st.info("Pilih algoritma untuk mengisi parameter dan memulai eksperimen.")
+        st.caption("Pilih algoritma di sidebar untuk mengatur parameter dan menjalankan eksperimen.")
         return
 
     if submitted:
-        if seed is None or any(value is None for value in parameters.values()):
-            st.error("Isi seed dan semua parameter sebelum menjalankan algoritma.")
-            return
-
         clear_last_run()
         output_path = unique_result_path(OUTPUT_DIRECTORY, algorithm)
         LOGGER.info("Memulai eksperimen algorithm=%s seed=%s parameters=%s", algorithm, seed, parameters)
@@ -233,7 +461,7 @@ def main() -> None:
                     algorithm_name=algorithm,
                     config_path=PROBLEM_FILE,
                     run_name=output_path.stem,
-                    seed=int(seed),
+                    seed=seed,
                     parameters=parameters,
                 )
                 write_result(output_path, result)
@@ -251,10 +479,10 @@ def main() -> None:
 
     result = st.session_state.get("last_run")
     if result is None:
-        st.info("Atur parameter lalu tekan **Jalankan** untuk melihat hasil.")
+        st.info("Klik **Jalankan** untuk melihat hasil eksperimen.")
         return
 
-    render_result(result, problem, show_outside)
+    render_result(result, problem)
 
 
 if __name__ == "__main__":
