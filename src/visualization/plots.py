@@ -110,7 +110,7 @@ def genetic_objective_figure(history: Mapping[str, Any], dark: bool = False) -> 
     if maximum is not None:
         figure.add_trace(
             go.Scatter(
-                x=list(range(1, len(maximum) + 1)),
+                x=list(range(len(maximum))),
                 y=maximum,
                 mode="lines+markers",
                 name="Maximum Objective",
@@ -122,7 +122,7 @@ def genetic_objective_figure(history: Mapping[str, Any], dark: bool = False) -> 
     if average is not None:
         figure.add_trace(
             go.Scatter(
-                x=list(range(1, len(average) + 1)),
+                x=list(range(len(average))),
                 y=average,
                 mode="lines+markers",
                 name="Average Objective",

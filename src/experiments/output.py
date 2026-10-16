@@ -1,8 +1,22 @@
 import json
 import math
+import os
+import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from core.state import State
+
+
+def unique_result_path(output_directory: Path, algorithm: str) -> Path:
+    directory = output_directory / algorithm
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = directory / f"run_{timestamp}.json"
+    suffix = 1
+    while candidate.exists():
+        candidate = directory / f"run_{timestamp}_{suffix}.json"
+        suffix += 1
+    return candidate
 
 
 def state_data(state: State) -> dict:
@@ -56,5 +70,23 @@ def json_safe(value):
 
 def write_result(path: Path, result: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(json_safe(result), file, indent=2)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as file:
+            temporary_path = Path(file.name)
+            json.dump(json_safe(result), file, indent=2)
+        os.replace(temporary_path, path)
+    except Exception:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise

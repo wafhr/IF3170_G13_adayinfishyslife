@@ -235,13 +235,17 @@ def create_state_figure(
 
     figure = go.Figure()
     text_color = "#f5f5f5" if dark else "#111111"
-    _add_truck_wireframe(figure, truck_dimensions, "#111111")
+    truck_color = "#f5f5f5" if dark else "#374151"
+    _add_truck_wireframe(figure, truck_dimensions, truck_color)
 
     extent_x = [0.0, truck_dimensions[0]]
     extent_y = [0.0, truck_dimensions[1]]
     extent_z = [0.0, truck_dimensions[2]]
     skipped = 0
     hidden_outside = 0
+    inside_count = 0
+    outside_count = 0
+    state_value = 0.0
 
     for index, package in enumerate(packages):
         if not isinstance(package, Mapping):
@@ -255,6 +259,13 @@ def create_state_figure(
             continue
 
         status = _status(position, dimensions, truck_dimensions)
+        if status == "Di dalam truk":
+            inside_count += 1
+            value = _number(package.get("value"))
+            if value is not None:
+                state_value += value
+        elif status == "Di luar truk":
+            outside_count += 1
         if status == "Di luar truk" and not show_outside:
             hidden_outside += 1
             continue
@@ -305,12 +316,22 @@ def create_state_figure(
         template="plotly_dark" if dark else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
         height=820,
-        margin={"l": 0, "r": 0, "t": 35, "b": 0},
+        title={
+            "text": (
+                f"Nilai state: {state_value:g}"
+                f" &nbsp;|&nbsp; Di dalam container: {inside_count} paket"
+                f" &nbsp;|&nbsp; Di luar container: {outside_count} paket"
+            ),
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {"color": text_color, "size": 16},
+        },
+        margin={"l": 0, "r": 0, "t": 55, "b": 0},
         legend={
-            "bgcolor": "rgba(255,255,255,0.92)",
-            "bordercolor": "#111111",
+            "bgcolor": "rgba(20,20,20,0.75)" if dark else "rgba(255,255,255,0.92)",
+            "bordercolor": truck_color,
             "borderwidth": 1,
-            "font": {"color": "#111111"},
+            "font": {"color": text_color},
         },
         scene={
             "bgcolor": "rgba(0,0,0,0)",
