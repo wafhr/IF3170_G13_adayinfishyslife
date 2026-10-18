@@ -46,6 +46,16 @@ def is_valid(state: State) -> bool:
 
     return True
 
-# Jumlah value paket yang seluruh bagiannya berada di dalam truk
-def objective_value(state: State) -> float:
-    return sum(package.value for package in state.packages if state.is_inside(package))
+OBJECTIVE_LABELS = {
+    "value": "Total value paket",
+    "eta": "Prioritas ETA",
+}
+
+
+def objective_value(state: State, objective: str = "value") -> float:
+    """Nilai objective untuk paket yang seluruh bagiannya berada di dalam truk."""
+    if objective == "value":
+        return sum(package.value for package in state.packages if state.is_inside(package))
+    if objective == "eta":
+        return sum(1 / (package.eta + 1) for package in state.packages if state.is_inside(package))
+    raise ValueError(f"Objective tidak dikenal: {objective}")

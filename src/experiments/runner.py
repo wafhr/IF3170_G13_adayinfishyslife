@@ -83,7 +83,7 @@ def run_experiment(
         run_name=run_name,
         initial_state=initial_state,
         final_state=final_state,
-        final_objective=objective_value(final_state),
+        final_objective=objective_value(final_state, parameters.get("objective", "value")),
         duration_seconds=duration,
         parameters={"seed": seed, **parameters},
         history=history,
@@ -96,6 +96,7 @@ def run_genetic_experiment(
     seed: int,
     population_size: int,
     iterations: int,
+    objective: str = "value",
 ) -> dict:
     truck, packages = load_problem(config_path)
     elite_size = min(2, population_size - 1)
@@ -106,11 +107,13 @@ def run_genetic_experiment(
         iterations=iterations,
         elite_size=elite_size,
         seed=seed,
+        objective=objective,
     )
     history = {
         "max_objective": result["max_history"],
         "average_objective": result["average_history"],
         "iterations": iterations,
+        "objective_name": objective,
     }
     output = result_data(
         algorithm="genetic_algorithm",
@@ -119,7 +122,7 @@ def run_genetic_experiment(
         final_state=result["final_state"],
         final_objective=result["final_value"],
         duration_seconds=result["duration_seconds"],
-        parameters={"seed": seed, "population_size": population_size, "iterations": iterations, "elite_size": elite_size},
+        parameters={"seed": seed, "population_size": population_size, "iterations": iterations, "elite_size": elite_size, "objective": objective},
         history=history,
     )
     output["population_size"] = population_size
@@ -140,6 +143,7 @@ def run_selected_experiment(
             seed=seed,
             population_size=parameters["population_size"],
             iterations=parameters["iterations"],
+            objective=parameters.get("objective", "value"),
         )
 
     algorithm = ALGORITHMS.get(algorithm_name)

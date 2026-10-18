@@ -1,5 +1,6 @@
 import math
 import random
+from typing import Any
 
 from core.evaluation import objective_value
 from core.operators import generate_neighbors
@@ -11,7 +12,8 @@ def simulated_annealing(
     initial_temperature: float,
     cooling_rate: float,
     max_iterations: int,
-) -> tuple[State, dict[str, list[float] | list[bool] | int]]:
+    objective: str = "value",
+) -> tuple[State, dict[str, Any]]:
     if initial_temperature < 0:
         raise ValueError("Initial temperature tidak boleh negatif.")
     if not 0 < cooling_rate <= 1:
@@ -23,6 +25,7 @@ def simulated_annealing(
     best = current.copy()
     history = {
         "objective": [],
+        "objective_name": objective,
         "exp_delta_e_over_t": [],
         "temperature": [],
         "stuck": [],
@@ -38,10 +41,10 @@ def simulated_annealing(
         if not neighbors:
             break
 
-        current_value = objective_value(current)
-        is_stuck = not any(objective_value(neighbor) > current_value for neighbor in neighbors)
+        current_value = objective_value(current, objective)
+        is_stuck = not any(objective_value(neighbor, objective) > current_value for neighbor in neighbors)
         next_state = random.choice(neighbors)
-        delta_e = objective_value(next_state) - current_value
+        delta_e = objective_value(next_state, objective) - current_value
         try:
             exp_delta_e_over_t = math.exp(delta_e / temperature)
         except OverflowError:
@@ -50,10 +53,10 @@ def simulated_annealing(
         if min(1.0, exp_delta_e_over_t) > random.random():
             current = next_state
 
-        if objective_value(current) > objective_value(best):
+        if objective_value(current, objective) > objective_value(best, objective):
             best = current.copy()
 
-        history["objective"].append(objective_value(current))
+        history["objective"].append(objective_value(current, objective))
         history["exp_delta_e_over_t"].append(exp_delta_e_over_t)
         history["temperature"].append(temperature)
         history["stuck"].append(is_stuck)

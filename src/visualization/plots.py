@@ -6,6 +6,8 @@ from typing import Any
 
 import plotly.graph_objects as go
 
+from core.evaluation import OBJECTIVE_LABELS
+
 
 def _numeric_series(values: Any) -> list[float | None] | None:
     if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
@@ -59,10 +61,11 @@ def objective_figure(history: Mapping[str, Any], dark: bool = False) -> go.Figur
     if series is None:
         return None
 
+    label = OBJECTIVE_LABELS.get(history.get("objective_name", "value"), "Objective")
     figure = _line_figure(
         series,
-        "Objective Value terhadap Iterasi",
-        "Objective Value",
+        f"{label} terhadap Iterasi",
+        label,
         "Objective",
         "#1f77b4",
         dark,
@@ -131,10 +134,11 @@ def genetic_objective_figure(history: Mapping[str, Any], dark: bool = False) -> 
             )
         )
 
+    label = OBJECTIVE_LABELS.get(history.get("objective_name", "value"), "Objective")
     figure.update_layout(
-        title="Objective Populasi terhadap Iterasi",
+        title=f"{label} populasi terhadap Iterasi",
         xaxis_title="Iterasi",
-        yaxis_title="Objective Value",
+        yaxis_title=label,
         template="plotly_dark" if dark else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

@@ -16,6 +16,7 @@ SRC_DIRECTORY = PROJECT_ROOT / "src"
 if str(SRC_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SRC_DIRECTORY))
 
+from core.evaluation import OBJECTIVE_LABELS
 from experiments.output import unique_result_path, write_result
 from experiments.runner import ALGORITHM_NAMES, run_selected_experiment
 from visualization.plots import annealing_probability_figure, genetic_objective_figure, objective_figure
@@ -142,6 +143,17 @@ def run_controls() -> tuple[str | None, int, dict[str, Any], bool]:
     st.session_state.setdefault("run_seed", SEED_DEFAULT)
     parameters: dict[str, Any] = {}
     with st.sidebar.form("run_experiment", enter_to_submit=False):
+        parameters["objective"] = st.selectbox(
+            "Fungsi objective",
+            tuple(OBJECTIVE_LABELS),
+            format_func=OBJECTIVE_LABELS.get,
+            key="objective_function",
+            help="Pilih fungsi objective yang akan dipakai untuk menilai dan mengoptimalkan state.",
+        )
+        if parameters["objective"] == "eta":
+            st.latex(r"f(S) = \sum_{i \in P_m} \frac{1}{\mathrm{ETA}_i + 1}")
+        else:
+            st.latex(r"f(S) = \sum_{i \in P_m} \mathrm{Value}_i")
         seed = st.number_input(
             "Seed", min_value=0, step=1, key="run_seed",
             help="Seed membuat eksperimen acak dapat diulang dengan hasil yang sama.",
@@ -403,7 +415,9 @@ def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None
     st.caption(f"Run: {run_name}")
 
     columns = st.columns(3)
-    display_metric(columns[0], "Nilai objective", result.get("final_objective"))
+    objective_name = result.get("parameters", {}).get("objective", "value")
+    objective_label = OBJECTIVE_LABELS.get(objective_name, "Objective")
+    display_metric(columns[0], f"Nilai objective · {objective_label}", result.get("final_objective"))
     display_metric(columns[1], "Durasi", result.get("duration_seconds", result.get("duration")), " s")
     display_metric(columns[2], "Jumlah iterasi", iterations)
 
