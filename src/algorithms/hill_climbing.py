@@ -23,12 +23,13 @@ def _start(initial_state: State) -> State:
     return initial_state.copy()
 
 
-def _history(initial: State, final: State, values: list, start: float, reason: str) -> dict:
+def _history(initial: State, final: State, values: list, start: float, reason: str, objective: str) -> dict:
     return {
         "initial_state": asdict(initial),
         "final_state": asdict(final),
         "final_objective": values[-1],
         "objective": values,
+        "objective_name": objective,
         "iteration": list(range(len(values))),
         "iterations": len(values) - 1,
         "duration_seconds": perf_counter() - start,
@@ -36,21 +37,21 @@ def _history(initial: State, final: State, values: list, start: float, reason: s
     }
 
 
-def steepest_ascent(initial_state: State) -> tuple[State, dict]:
+def steepest_ascent(initial_state: State, objective: str = "value") -> tuple[State, dict]:
     start = perf_counter()
     current = _start(initial_state)
-    values = [objective_value(current)]
+    values = [objective_value(current, objective)]
     while True:
         best, best_value = None, values[-1]
         for neighbor in generate_neighbors(current):
-            value = objective_value(neighbor)
+            value = objective_value(neighbor, objective)
             if value > best_value:
                 best, best_value = neighbor, value
         if best is None:
             break
         current = best
         values.append(best_value)
-    return current, _history(initial_state, current, values, start, "no_improvement")
+    return current, _history(initial_state, current, values, start, "no_improvement", objective)
 
 
 def random_restart(
@@ -58,6 +59,7 @@ def random_restart(
     max_restarts: int = 10,
     seed: int | None = None,
     max_attempts: int = 50,
+    objective: str = "value",
 ) -> tuple[State, dict]:
     start = perf_counter()
     _check_limit("max_restarts", max_restarts)
@@ -66,7 +68,7 @@ def random_restart(
     current = _start(initial_state)
     rng = random.Random(seed)
     seed_base = rng.getrandbits(128)
-    best, best_value, best_run = current.copy(), objective_value(current), 0
+    best, best_value, best_run = current.copy(), objective_value(current, objective), 0
     runs, values, iterations, run_indices = [], [], [], []
     accepted = 0
     for run_index in range(max_restarts + 1):
@@ -76,7 +78,7 @@ def random_restart(
                 initial_state.truck, initial_state.packages,
                 seed=restart_seed, max_attempts=max_attempts,
             )
-        final, history = steepest_ascent(current)
+        final, history = steepest_ascent(current, objective)
         history.update(run_index=run_index, seed=restart_seed)
         runs.append(history)
         if run_index == 0 or history["final_objective"] > best_value:
@@ -85,7 +87,7 @@ def random_restart(
         iterations.extend(accepted + i for i in history["iteration"])
         run_indices.extend([run_index] * len(history["objective"]))
         accepted += history["iterations"]
-    history = _history(initial_state, best, values, start, "max_restarts")
+    history = _history(initial_state, best, values, start, "max_restarts", objective)
     history.update(
         final_objective=best_value, iterations=accepted, iteration=iterations,
         run_index=run_indices, runs=runs, restarts=max_restarts,
@@ -123,13 +125,13 @@ def _random_successor(state: State, rng: random.Random) -> State | None:
 
 
 def stochastic(
-    initial_state: State, seed: int | None = None, nmax: int = 100,
+    initial_state: State, seed: int | None = None, nmax: int = 100, objective: str = "value",
 ) -> tuple[State, dict]:
     start = perf_counter()
     _check_limit("nmax", nmax)
     current = _start(initial_state)
     rng = random.Random(seed)
-    values = [objective_value(current)]
+    values = [objective_value(current, objective)]
     attempt_values = [values[0]]
     accepted_attempts = []
     invalid_proposals = 0
@@ -141,13 +143,13 @@ def stochastic(
         if selected is None:
             invalid_proposals += 1
         else:
-            value = objective_value(selected)
+            value = objective_value(selected, objective)
             if value > values[-1]:
                 current = selected
                 values.append(value)
                 accepted_attempts.append(attempt)
         attempt_values.append(values[-1])
-    history = _history(initial_state, current, values, start, reason)
+    history = _history(initial_state, current, values, start, reason, objective)
     history.update(
         seed=seed, nmax=nmax, selection="random_operation_proposal",
         attempts=len(attempt_values) - 1, attempt_objective=attempt_values,
@@ -157,18 +159,18 @@ def stochastic(
 
 
 def sideways(
-    initial_state: State, max_sideways: int = 100, seed: int | None = None,
+    initial_state: State, max_sideways: int = 100, seed: int | None = None, objective: str = "value",
 ) -> tuple[State, dict]:
     start = perf_counter()
     _check_limit("max_sideways", max_sideways)
     current = _start(initial_state)
     rng = random.Random(seed)
-    values = [objective_value(current)]
+    values = [objective_value(current, objective)]
     sideways_moves = 0
     while True:
         best, best_value, ties = None, values[-1], 0
         for neighbor in generate_neighbors(current):
-            value = objective_value(neighbor)
+            value = objective_value(neighbor, objective)
             if value > best_value:
                 best, best_value, ties = neighbor, value, 1
             elif value == best_value:
@@ -189,6 +191,6 @@ def sideways(
             if sideways_moves == max_sideways:
                 reason = "max_sideways"
                 break
-    history = _history(initial_state, current, values, start, reason)
+    history = _history(initial_state, current, values, start, reason, objective)
     history.update(sideways_moves=sideways_moves, sideways_limit_mode="total", seed=seed)
     return current, history

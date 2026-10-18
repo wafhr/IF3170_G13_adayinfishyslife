@@ -135,6 +135,7 @@ def _add_package_box(
     color: str,
     opacity: float,
     hover_text: str,
+    selected: bool = False,
 ) -> None:
     x0, y0, z0 = position
     width, length, height = dimensions
@@ -170,6 +171,31 @@ def _add_package_box(
         )
     )
 
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+    edge_x: list[float | None] = []
+    edge_y: list[float | None] = []
+    edge_z: list[float | None] = []
+    for start, end in edges:
+        edge_x.extend([x[start], x[end], None])
+        edge_y.extend([y[start], y[end], None])
+        edge_z.extend([z[start], z[end], None])
+
+    figure.add_trace(
+        go.Scatter3d(
+            x=edge_x,
+            y=edge_y,
+            z=edge_z,
+            mode="lines",
+            line={"color": "#111827" if selected else "#263244", "width": 7 if selected else 4},
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+
 
 def _state_for_view(problem: Any, state: Any) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(problem, Mapping):
@@ -198,10 +224,9 @@ def _state_for_view(problem: Any, state: Any) -> tuple[dict[str, Any] | None, st
         placement = placement_by_id.get(package["id"])
         if placement is None:
             missing_ids.append(package["id"])
-            continue
         merged = dict(package)
-        merged["position"] = placement.get("position")
-        merged["orientation"] = placement.get("orientation")
+        merged["position"] = placement.get("position") if placement is not None else None
+        merged["orientation"] = placement.get("orientation") if placement is not None else None
         merged["isFragile"] = package.get("is_fragile", False)
         merged_packages.append(merged)
 
@@ -211,27 +236,73 @@ def _state_for_view(problem: Any, state: Any) -> tuple[dict[str, Any] | None, st
     return {"truck": truck, "packages": merged_packages}, warning
 
 
+def state_package_rows(problem: Any, state: Any) -> tuple[list[dict[str, Any]] | None, str | None]:
+    state_data, warning = _state_for_view(problem, state)
+    if state_data is None:
+        return None, warning
+
+    truck = state_data.get("truck")
+    truck_dimensions = _dimensions(truck.get("dimensions")) if isinstance(truck, Mapping) else None
+    if truck_dimensions is None:
+        return None, "Dimensi truk tidak lengkap atau tidak valid."
+
+    packages = state_data.get("packages")
+    if not isinstance(packages, list):
+        return None, "Field `packages` pada state tidak tersedia atau bukan list."
+
+    rows = []
+    invalid_count = 0
+    for index, package in enumerate(packages):
+        if not isinstance(package, Mapping):
+            invalid_count += 1
+            continue
+        position = _position(package.get("position"))
+        dimensions = _oriented_dimensions(package)
+        if position is None or dimensions is None:
+            status = "Data tidak valid"
+            invalid_count += 1
+        else:
+            status = _status(position, dimensions, truck_dimensions)
+        rows.append({
+            "id": str(package.get("id", f"Paket {index + 1}")),
+            "position": position,
+            "dimensions": package.get("dimensions"),
+            "oriented_dimensions": dimensions,
+            "orientation": package.get("orientation"),
+            "weight": package.get("weight"),
+            "value": package.get("value"),
+            "is_fragile": package.get("isFragile", package.get("is_fragile", False)),
+            "eta": package.get("eta"),
+            "status": status,
+            "index": index,
+        })
+
+    if invalid_count:
+        invalid_warning = f"{invalid_count} paket memiliki posisi atau dimensi yang tidak valid."
+        warning = f"{warning} {invalid_warning}" if warning else invalid_warning
+    return rows, warning
+
+
 def create_state_figure(
     problem: Any,
     state: Any,
     dark: bool = False,
     show_outside: bool = True,
+    package_filter: str = "Semua",
+    selected_package_id: str | None = None,
+    height: int = 440,
 ) -> tuple[go.Figure | None, str | None]:
-    state, state_warning = _state_for_view(problem, state)
-    if state is None:
-        return None, state_warning
+    rows, warning = state_package_rows(problem, state)
+    if rows is None:
+        return None, warning
 
-    truck = state.get("truck")
+    truck = problem.get("truck") if isinstance(problem, Mapping) else None
     if not isinstance(truck, Mapping):
         return None, "Field `truck` pada state tidak tersedia."
 
     truck_dimensions = _dimensions(truck.get("dimensions"))
     if truck_dimensions is None:
         return None, "Dimensi truk tidak lengkap atau tidak valid."
-
-    packages = state.get("packages")
-    if not isinstance(packages, list):
-        return None, "Field `packages` pada state tidak tersedia atau bukan list."
 
     figure = go.Figure()
     text_color = "#f5f5f5" if dark else "#111111"
@@ -241,71 +312,60 @@ def create_state_figure(
     extent_x = [0.0, truck_dimensions[0]]
     extent_y = [0.0, truck_dimensions[1]]
     extent_z = [0.0, truck_dimensions[2]]
-    skipped = 0
+    package_labels = []
     hidden_outside = 0
-    inside_count = 0
-    outside_count = 0
-    state_value = 0.0
-
-    for index, package in enumerate(packages):
-        if not isinstance(package, Mapping):
-            skipped += 1
-            continue
-
-        position = _position(package.get("position"))
-        dimensions = _oriented_dimensions(package)
+    for row in rows:
+        position = row["position"]
+        dimensions = row["oriented_dimensions"]
         if position is None or dimensions is None:
-            skipped += 1
             continue
 
-        status = _status(position, dimensions, truck_dimensions)
-        if status == "Di dalam truk":
-            inside_count += 1
-            value = _number(package.get("value"))
-            if value is not None:
-                state_value += value
-        elif status == "Di luar truk":
-            outside_count += 1
+        status = row["status"]
+        if package_filter == "Di dalam truk" and status != "Di dalam truk":
+            continue
+        if package_filter == "Di luar truk" and status == "Di dalam truk":
+            continue
         if status == "Di luar truk" and not show_outside:
             hidden_outside += 1
             continue
-        package_id = str(package.get("id", f"Paket {index + 1}"))
-        original_dimensions = package.get("dimensions")
-        orientation = package.get("orientation", {"w": "x", "l": "y", "h": "z"})
+        package_id = row["id"]
 
         hover_text = (
             f"<b>{html.escape(package_id)}</b><br>"
-            f"Status: {html.escape(status)}<br>"
-            f"Posisi: {tuple(position)}<br>"
-            f"Dimensi asli: {html.escape(str(original_dimensions))}<br>"
-            f"Dimensi terorientasi: {tuple(dimensions)}<br>"
-            f"Orientasi: {html.escape(str(orientation))}<br>"
-            f"Value: {html.escape(str(package.get('value', 'Tidak tersedia')))}<br>"
-            f"Weight: {html.escape(str(package.get('weight', 'Tidak tersedia')))}<br>"
-            f"Fragile: {html.escape(str(package.get('isFragile', False)))}"
+            f"Posisi: {html.escape(str(position))}<br>"
+            f"Berat: {html.escape(str(row['weight']))}<br>"
+            f"Value: {html.escape(str(row['value']))}"
         )
 
+        is_selected = package_id == selected_package_id
+        other_selected = selected_package_id is not None and not is_selected
         _add_package_box(
             figure=figure,
             position=position,
             dimensions=dimensions,
             package_id=package_id,
-            color=PALETTE[index % len(PALETTE)],
-            opacity=0.82 if status == "Di dalam truk" else 0.45,
+            color="#ff00c8" if is_selected else ("#9ca3af" if other_selected else PALETTE[row["index"] % len(PALETTE)]),
+            opacity=0.98 if is_selected else (0.22 if other_selected else (0.82 if status == "Di dalam truk" else 0.45)),
             hover_text=hover_text,
+            selected=is_selected,
         )
-        figure.add_trace(
-            go.Scatter3d(
-                x=[position[0] + dimensions[0] / 2],
-                y=[position[1] + dimensions[1] / 2],
-                z=[position[2] + dimensions[2] / 2],
-                mode="text",
-                text=[package_id],
-                textfont={"size": 11, "color": text_color},
-                showlegend=False,
-                hoverinfo="skip",
-            )
-        )
+        package_labels.append({
+            "x": position[0] + dimensions[0] / 2,
+            "y": position[1] + dimensions[1] / 2,
+            "z": position[2] + dimensions[2] / 2,
+            "text": html.escape(package_id),
+            "showarrow": False,
+            "bgcolor": "#d500a8" if is_selected else "rgba(255,255,255,0.96)",
+            "bordercolor": "#111827" if is_selected else "#263244",
+            "borderwidth": 2 if is_selected else 1,
+            "borderpad": 4,
+            "font": {
+                "family": "Arial Black" if is_selected else "Arial",
+                "size": 13 if is_selected else 11,
+                "color": "#ffffff" if is_selected else "#111827",
+            },
+            "captureevents": False,
+        })
 
         extent_x.extend([position[0], position[0] + dimensions[0]])
         extent_y.extend([position[1], position[1] + dimensions[1]])
@@ -315,17 +375,7 @@ def create_state_figure(
     figure.update_layout(
         template="plotly_dark" if dark else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
-        height=820,
-        title={
-            "text": (
-                f"Nilai state: {state_value:g}"
-                f" &nbsp;|&nbsp; Di dalam container: {inside_count} paket"
-                f" &nbsp;|&nbsp; Di luar container: {outside_count} paket"
-            ),
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {"color": text_color, "size": 16},
-        },
+        height=height,
         margin={"l": 0, "r": 0, "t": 55, "b": 0},
         legend={
             "bgcolor": "rgba(20,20,20,0.75)" if dark else "rgba(255,255,255,0.92)",
@@ -335,6 +385,7 @@ def create_state_figure(
         },
         scene={
             "bgcolor": "rgba(0,0,0,0)",
+            "annotations": package_labels,
             "xaxis": {"title": "X / Width", "range": [min(extent_x) - padding, max(extent_x) + padding]},
             "yaxis": {"title": "Y / Length", "range": [min(extent_y) - padding, max(extent_y) + padding]},
             "zaxis": {"title": "Z / Height", "range": [min(extent_z) - padding, max(extent_z) + padding]},
@@ -343,10 +394,6 @@ def create_state_figure(
         },
     )
 
-    warning = state_warning
-    if skipped:
-        skipped_warning = f"{skipped} paket tidak divisualisasikan karena data posisi/dimensinya tidak valid."
-        warning = f"{warning} {skipped_warning}" if warning else skipped_warning
     if hidden_outside:
         outside_warning = f"{hidden_outside} paket di luar truk disembunyikan pada mode fokus container."
         warning = f"{warning} {outside_warning}" if warning else outside_warning

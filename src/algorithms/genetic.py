@@ -12,8 +12,8 @@ from core.operators import outside_position, random_initial_state
 from core.state import ORIENTATIONS, Package, State, Truck
 
 
-def _fitness(state: State) -> float:
-    return objective_value(state)
+def _fitness(state: State, objective: str = "value") -> float:
+    return objective_value(state, objective)
 
 
 def _place_genes(
@@ -122,6 +122,7 @@ def genetic_algorithm(
     tournament_size: int = 3,
     repair_attempts: int = 40,
     seed: int | None = None,
+    objective: str = "value",
 ) -> dict[str, Any]:
     """Run GA and return best states plus per-generation max/average fitness."""
     if type(population_size) is not int or population_size < 2:
@@ -150,19 +151,19 @@ def genetic_algorithm(
     average_history: list[float] = []
 
     def record() -> None:
-        scores = [_fitness(individual) for individual in population]
+        scores = [_fitness(individual, objective) for individual in population]
         max_history.append(max(scores, default=0.0))
         average_history.append(sum(scores) / len(scores) if scores else 0.0)
 
     record()
     for _ in range(iterations):
-        ranked = sorted(population, key=_fitness, reverse=True)
+        ranked = sorted(population, key=lambda individual: _fitness(individual, objective), reverse=True)
         next_population = [individual.copy() for individual in ranked[:elite_size]]
         while len(next_population) < population_size:
             pool = rng.sample(population, min(tournament_size, len(population)))
-            parent_a = max(pool, key=_fitness)
+            parent_a = max(pool, key=lambda individual: _fitness(individual, objective))
             pool = rng.sample(population, min(tournament_size, len(population)))
-            parent_b = max(pool, key=_fitness)
+            parent_b = max(pool, key=lambda individual: _fitness(individual, objective))
             child = _crossover(parent_a, parent_b, rng, repair_attempts)
             if rng.random() < mutation_rate and child.packages:
                 child = _mutate(child, rng, repair_attempts)
@@ -170,12 +171,15 @@ def genetic_algorithm(
         population = next_population
         record()
 
-    best = max(population, key=_fitness)
+    best = max(population, key=lambda individual: _fitness(individual, objective))
     return {
         "initial_population": initial_population,
-        "best_initial_state": max(initial_population, key=_fitness).copy(),
+        "best_initial_state": max(
+            initial_population, key=lambda individual: _fitness(individual, objective)
+        ).copy(),
         "final_state": best.copy(),
-        "final_value": _fitness(best),
+        "final_value": _fitness(best, objective),
+        "objective_name": objective,
         "max_history": max_history,
         "average_history": average_history,
         "population_size": population_size,

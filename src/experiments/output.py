@@ -2,21 +2,9 @@ import json
 import math
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 from core.state import State
-
-
-def unique_result_path(output_directory: Path, algorithm: str) -> Path:
-    directory = output_directory / algorithm
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    candidate = directory / f"run_{timestamp}.json"
-    suffix = 1
-    while candidate.exists():
-        candidate = directory / f"run_{timestamp}_{suffix}.json"
-        suffix += 1
-    return candidate
 
 
 def state_data(state: State) -> dict:
