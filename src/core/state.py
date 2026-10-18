@@ -12,7 +12,8 @@ ORIENTATIONS = (
 def check_dimensions(width: int, length: int, height: int) -> None:
     if any(type(size) is not int or size <= 0 for size in (width, length, height)):
         raise ValueError("Dimensi harus berupa bilangan bulat positif.")
-    
+
+
 @dataclass
 class Package:
     id: str
@@ -25,8 +26,9 @@ class Package:
     eta: int = 0  # Sisa hari; default 0 untuk pemanggilan lama.
 
     def __post_init__(self):
-        if (not isinstance(self.dimensions, dict) or set(self.dimensions) != {"w", "l", "h"} or any(type(size) is not int or size <= 0 for size in self.dimensions.values())):
+        if not isinstance(self.dimensions, dict) or set(self.dimensions) != {"w", "l", "h"}:
             raise ValueError("Dimensions harus berisi w, l, h berupa bilangan bulat positif.")
+        check_dimensions(*(self.dimensions[side] for side in ("w", "l", "h")))
         self.dimensions = self.dimensions.copy()
         if type(self.eta) is not int or self.eta < 0:
             raise ValueError("ETA harus berupa bilangan bulat non-negatif (sisa hari).")
@@ -48,8 +50,9 @@ class Truck:
     max_capacity: float
     
     def __post_init__(self):
-        if (not isinstance(self.dimensions, dict) or set(self.dimensions) != {"w", "l", "h"}or any(type(size) is not int or size <= 0 for size in self.dimensions.values())):
+        if not isinstance(self.dimensions, dict) or set(self.dimensions) != {"w", "l", "h"}:
             raise ValueError("Dimensions harus berisi w, l, h berupa bilangan bulat positif.")
+        check_dimensions(*(self.dimensions[side] for side in ("w", "l", "h")))
         self.dimensions = self.dimensions.copy()
         if self.max_capacity < 0:
             raise ValueError("Kapasitas truk tidak boleh negatif.")
