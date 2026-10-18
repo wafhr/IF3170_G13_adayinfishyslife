@@ -3,7 +3,7 @@ from dataclasses import replace
 from collections.abc import Iterator
 
 from core.evaluation import is_valid
-from core.state import ORIENTATIONS, Package, State, Truck
+from core.state import ORIENTATIONS, FleetState, Package, State, Truck
 
 # Helper yg mengembalikan koordinat di luar truk
 def outside_position(state: State, package_index: int) -> tuple[int, int, int]:
@@ -12,10 +12,17 @@ def outside_position(state: State, package_index: int) -> tuple[int, int, int]:
         x += max(package.dimensions.values())
     return x, 0, 0
 
-def random_initial_state(truck: Truck, packages: list[Package], seed: int | None = None,max_attempts: int = 50) -> State:
+def random_initial_state(truck: Truck | list[Truck], packages: list[Package], seed: int | None = None,max_attempts: int = 50) -> State | FleetState:
     if type(max_attempts) is not int or max_attempts <= 0:
         raise ValueError("Max attempts harus berupa bilangan bulat positif.")
 
+    if isinstance(truck, list):
+        if not truck:
+            raise ValueError("Armada harus memiliki minimal satu truk.")
+        # Start jointly: all packages are candidates for any truck; neighborhoods
+        # include reassignment moves, so the search optimizes the fleet globally.
+        first = random_initial_state(truck[0], packages, seed=seed, max_attempts=max_attempts)
+        return FleetState([first, *(State(t, []) for t in truck[1:])])
     rng = random.Random(seed)
     state = State(truck, packages).copy()
     for i, package in enumerate(state.packages):
@@ -80,6 +87,35 @@ def rotate_package(state: State, package_index: int, axis: str) -> State | None:
 
 # Hasilkan neighbor valid satu per satu
 def generate_neighbors(state: State) -> Iterator[State]:
+    if isinstance(state, FleetState):
+        # Geometric moves inside each vehicle.
+        for truck_index, truck_state in enumerate(state.trucks):
+            for neighbor in generate_neighbors(truck_state):
+                candidate = state.copy()
+                candidate.trucks[truck_index] = neighbor
+                yield candidate
+        # Reassign a package to another truck, testing feasible placements there.
+        for source_index, source in enumerate(state.trucks):
+            for package_index, package in enumerate(source.packages):
+                for target_index, target in enumerate(state.trucks):
+                    if source_index == target_index:
+                        continue
+                    base = state.copy()
+                    moving = base.trucks[source_index].packages.pop(package_index)
+                    moving.position = outside_position(base.trucks[source_index], package_index)
+                    base.trucks[target_index].packages.append(moving)
+                    destination = base.trucks[target_index]
+                    i = len(destination.packages) - 1
+                    width, length, height = moving.oriented_dimensions()
+                    dims = destination.truck.dimensions
+                    for x in range(max(0, dims['w'] - width + 1)):
+                        for y in range(max(0, dims['l'] - length + 1)):
+                            for z in range(max(0, dims['h'] - height + 1)):
+                                trial = base.copy()
+                                trial.trucks[target_index].packages[i].position = (x, y, z)
+                                if is_valid(trial):
+                                    yield trial
+        return
     for i, package in enumerate(state.packages):
         width, length, height = package.oriented_dimensions()
         for x in range(state.truck.dimensions["w"] - width + 1):

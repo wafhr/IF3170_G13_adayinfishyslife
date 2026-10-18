@@ -1,7 +1,9 @@
-from core.state import State
+from core.state import FleetState, State
 
 
-def is_valid(state: State) -> bool:
+def is_valid(state: State | FleetState) -> bool:
+    if isinstance(state, FleetState):
+        return all(is_valid(truck_state) for truck_state in state.trucks)
     loaded = []
     total_weight = 0
 
@@ -52,7 +54,7 @@ OBJECTIVE_LABELS = {
 }
 
 
-def objective_value(state: State, objective: str = "value") -> float:
+def objective_value(state: State | FleetState, objective: str = "value") -> float:
     """Nilai objective untuk paket yang seluruh bagiannya berada di dalam truk."""
     if objective == "value":
         return sum(package.value for package in state.packages if state.is_inside(package))

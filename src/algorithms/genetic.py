@@ -8,8 +8,8 @@ from dataclasses import replace
 from typing import Any
 
 from core.evaluation import is_valid, objective_value
-from core.operators import outside_position, random_initial_state
-from core.state import ORIENTATIONS, Package, State, Truck
+from core.operators import generate_neighbors, outside_position, random_initial_state
+from core.state import ORIENTATIONS, FleetState, Package, State, Truck
 
 
 def _fitness(state: State, objective: str = "value") -> float:
@@ -83,12 +83,25 @@ def _crossover(
     rng: random.Random,
     repair_attempts: int,
 ) -> State:
+    if isinstance(first, FleetState):
+        trucks = [State(s.truck, []) for s in first.trucks]
+        for package in first.packages:
+            parent = first if rng.random() < 0.5 else second
+            source, _ = parent.locate(package.id)
+            truck_index = next(i for i, candidate in enumerate(parent.trucks) if candidate is source)
+            inherited = replace(package)
+            trucks[truck_index].packages.append(inherited)
+        child = FleetState(trucks)
+        return child if is_valid(child) else (first.copy() if rng.random() < 0.5 else second.copy())
     genes_a, genes_b = _genes_from(first), _genes_from(second)
     genes = [rng.choice((a, b)) for a, b in zip(genes_a, genes_b)]
     return _place_genes(first.truck, first.packages, genes, rng, repair_attempts)
 
 
 def _mutate(state: State, rng: random.Random, repair_attempts: int) -> State:
+    if isinstance(state, FleetState):
+        neighbors = list(generate_neighbors(state))
+        return rng.choice(neighbors) if neighbors else state.copy()
     genes = _genes_from(state)
     index = rng.randrange(len(genes))
     position, orientation, inside = genes[index]
@@ -113,7 +126,7 @@ def _mutate(state: State, rng: random.Random, repair_attempts: int) -> State:
 
 
 def genetic_algorithm(
-    truck: Truck,
+    truck: Truck | list[Truck],
     packages: list[Package],
     population_size: int = 40,
     iterations: int = 100,

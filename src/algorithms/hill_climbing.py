@@ -9,7 +9,7 @@ from core.operators import (
     generate_neighbors, random_initial_state, move_package, rotate_package,
     swap_packages, outside_position,
 )
-from core.state import State
+from core.state import FleetState, State
 
 
 def _check_limit(name: str, value: int) -> None:
@@ -75,7 +75,8 @@ def random_restart(
         restart_seed = None if run_index == 0 else seed_base + run_index
         if run_index:
             current = random_initial_state(
-                initial_state.truck, initial_state.packages,
+                [s.truck for s in initial_state.trucks] if isinstance(initial_state, FleetState) else initial_state.truck,
+                initial_state.packages,
                 seed=restart_seed, max_attempts=max_attempts,
             )
         final, history = steepest_ascent(current, objective)
@@ -98,6 +99,9 @@ def random_restart(
 
 
 def _random_successor(state: State, rng: random.Random) -> State | None:
+    if isinstance(state, FleetState):
+        neighbors = list(generate_neighbors(state))
+        return rng.choice(neighbors) if neighbors else None
     index = rng.randrange(len(state.packages))
     operation = rng.choice(("move", "rotate", "swap"))
     if operation == "rotate":

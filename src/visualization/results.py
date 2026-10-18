@@ -66,6 +66,7 @@ def table_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "ID": row["id"],
+            "Truk": row.get("truck_index", 1),
             "Posisi (x, y, z)": format_position(row["position"]),
             "Berat": row["weight"],
             "Value": row["value"],
@@ -87,6 +88,7 @@ def render_package_details(container: Any, package_id: str | None, rows: list[di
             title = escape(f"{row['id']} · {state_label}")
             details = (
                 ("Posisi", format_position(row["position"])),
+                ("Truk", str(row.get("truck_index", 1))),
                 ("Berat", format_number(row["weight"])),
                 ("Value", format_number(row["value"])),
                 ("Fragile", "Ya" if row["is_fragile"] else "Tidak"),
@@ -122,6 +124,7 @@ def render_state_chart(
     state: Any,
     package_filter: str,
     selected_package_id: str | None,
+    truck_index: int | None,
 ) -> None:
     with container:
         st.subheader(title)
@@ -130,6 +133,7 @@ def render_state_chart(
             state,
             package_filter=package_filter,
             selected_package_id=selected_package_id,
+            truck_index=truck_index,
         )
         if figure is None:
             st.warning(warning or "State tidak dapat divisualisasikan.")
@@ -159,6 +163,9 @@ def render_state_and_packages(
         help="Filter berlaku pada grafik 3D dan tabel paket.",
     )
     capacity = problem.get("truck", {}).get("max_capacity") if isinstance(problem.get("truck"), Mapping) else None
+    active_state = result.get("initial_state") if mode == "Initial" else result.get("final_state")
+    truck_count = active_state.get("truck_count", 1) if isinstance(active_state, Mapping) else 1
+    truck_index = None if truck_count > 1 else 1
     selected_id = st.session_state.get("selected_package_id")
 
     if mode == "Initial":
@@ -166,7 +173,11 @@ def render_state_and_packages(
     else:
         state_rows = final_rows
 
-    displayed_rows = visible_package_rows(state_rows, package_filter)
+    selected_truck_rows = (
+        state_rows if truck_index is None
+        else [row for row in state_rows if row.get("truck_index", 1) == truck_index]
+    )
+    displayed_rows = visible_package_rows(selected_truck_rows, package_filter)
     visible_ids = {row["id"] for row in displayed_rows}
     if selected_id not in visible_ids:
         selected_id = None
@@ -174,11 +185,12 @@ def render_state_and_packages(
 
     state_label = "Initial" if mode == "Initial" else "Final"
     state_value = result.get("initial_state") if mode == "Initial" else result.get("final_state")
-    state_metrics(st.container(), state_rows, capacity)
+    fleet_capacity = capacity * truck_count if isinstance(capacity, (int, float)) else capacity
+    state_metrics(st.container(), state_rows, fleet_capacity)
     chart_column, detail_column = st.columns([3, 1])
     render_state_chart(
         chart_column, f"{state_label} State", f"{run_key}_{state_label.lower()}_state", problem,
-        state_value, package_filter, selected_id,
+        state_value, package_filter, selected_id, truck_index,
     )
     render_package_details(detail_column, selected_id, state_rows, state_label)
 
@@ -194,7 +206,7 @@ def render_state_and_packages(
     table_key = f"packages_{run_key}_{mode}_{package_filter}"
     table = st.dataframe(
         table_rows(displayed_rows),
-        column_order=("ID", "Posisi (x, y, z)", "Berat", "Value", "Fragile", "ETA", "Status"),
+        column_order=("ID", "Truk", "Posisi (x, y, z)", "Berat", "Value", "Fragile", "ETA", "Status"),
         hide_index=True,
         height=220,
         width="stretch",
