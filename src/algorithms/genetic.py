@@ -130,7 +130,7 @@ def genetic_algorithm(
     packages: list[Package],
     population_size: int = 40,
     iterations: int = 100,
-    mutation_rate: float = 0.15,
+    mutation_rate: float = 0.3,
     elite_size: int = 2,
     tournament_size: int = 3,
     repair_attempts: int = 40,
