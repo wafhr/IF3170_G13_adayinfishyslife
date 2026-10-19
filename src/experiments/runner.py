@@ -126,7 +126,7 @@ def run_genetic_experiment(
     output = result_data(
         algorithm="genetic_algorithm",
         run_name=run_name,
-        initial_state=result["best_initial_state"],
+        initial_state=result["initial_state"],
         final_state=result["final_state"],
         final_objective=result["final_value"],
         duration_seconds=result["duration_seconds"],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +92,13 @@ def main() -> None:
             if not suffix:
                 output_path = output_path.with_suffix(".json")
             if output_path.exists():
-                raise ValueError(f"File output sudah ada: {output_path}")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                output_path = output_path.parent / f"hasil_{timestamp}.json"
+                collision_index = 1
+                while output_path.exists():
+                    output_path = output_path.parent / f"hasil_{timestamp}_{collision_index}.json"
+                    collision_index += 1
+                st.session_state["output_path"] = str(output_path)
             run_name = output_path.stem
 
             LOGGER.info(

@@ -16,6 +16,46 @@ def _fitness(state: State, objective: str = "value") -> float:
     return objective_value(state, objective)
 
 
+def _randomized_initial_individual(
+    truck: Truck | list[Truck],
+    packages: list[Package],
+    rng: random.Random,
+    repair_attempts: int,
+) -> State | FleetState:
+    """Create a valid GA individual with randomized assignment and load density."""
+    base = random_initial_state(truck, packages, seed=rng.randrange(2**32))
+    states = base.trucks if isinstance(base, FleetState) else [base]
+    loaded = [
+        (truck_index, package.id)
+        for truck_index, state in enumerate(states)
+        for package in state.packages
+        if state.is_inside(package)
+    ]
+    if not loaded:
+        return base
+
+    # Randomize how many of the initially placeable packages remain loaded.
+    # The ordinary initializer is greedy, so without this step GA starts from
+    # states that are already densely packed and often near the best objective.
+    min_loaded = min(len(loaded), max(1, round(len(packages) * 0.30)))
+    max_loaded = min(len(loaded), max(min_loaded, round(len(packages) * 0.70)))
+    keep_count = rng.randint(min_loaded, max_loaded)
+    kept = set(rng.sample(loaded, keep_count))
+
+    randomized_states = []
+    for truck_index, state in enumerate(states):
+        genes = [
+            (package.position, package.orientation.copy(),
+             (truck_index, package.id) in kept)
+            for package in state.packages
+        ]
+        randomized_states.append(
+            _place_genes(state.truck, state.packages, genes, rng, repair_attempts)
+        )
+
+    return FleetState(randomized_states) if isinstance(base, FleetState) else randomized_states[0]
+
+
 def _place_genes(
     truck: Truck,
     template: list[Package],
@@ -154,12 +194,22 @@ def genetic_algorithm(
     rng = random.Random(seed)
     started = time.perf_counter()
     population = [
-        random_initial_state(truck, packages, seed=rng.randrange(2**32))
+        _randomized_initial_individual(truck, packages, rng, repair_attempts)
         for _ in range(population_size)
     ]
     if not all(is_valid(individual) for individual in population):
         raise RuntimeError("Inisialisasi menghasilkan state yang tidak valid.")
     initial_population = [individual.copy() for individual in population]
+    initial_scores = [_fitness(individual, objective) for individual in initial_population]
+    initial_best_score = max(initial_scores, default=0.0)
+    non_best_initial = [
+        individual for individual, score in zip(initial_population, initial_scores)
+        if score < initial_best_score
+    ]
+    # Keep the displayed starting individual representative of a random
+    # population member rather than accidentally showing the best individual.
+    display_rng = random.Random(None if seed is None else seed ^ 0x5A17)
+    displayed_initial_state = display_rng.choice(non_best_initial or initial_population).copy()
     max_history: list[float] = []
     average_history: list[float] = []
 
@@ -187,6 +237,10 @@ def genetic_algorithm(
     best = max(population, key=lambda individual: _fitness(individual, objective))
     return {
         "initial_population": initial_population,
+        # A single representative initial state should be an actual random
+        # individual, not the population's best member. Population-level best
+        # and average are recorded separately in their history series.
+        "initial_state": displayed_initial_state,
         "best_initial_state": max(
             initial_population, key=lambda individual: _fitness(individual, objective)
         ).copy(),

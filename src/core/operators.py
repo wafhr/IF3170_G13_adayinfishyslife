@@ -19,10 +19,24 @@ def random_initial_state(truck: Truck | list[Truck], packages: list[Package], se
     if isinstance(truck, list):
         if not truck:
             raise ValueError("Armada harus memiliki minimal satu truk.")
-        # Start jointly: all packages are candidates for any truck; neighborhoods
-        # include reassignment moves, so the search optimizes the fleet globally.
-        first = random_initial_state(truck[0], packages, seed=seed, max_attempts=max_attempts)
-        return FleetState([first, *(State(t, []) for t in truck[1:])])
+        # Randomize package-to-truck assignment as well as each truck's layout.
+        # Shuffled round-robin avoids systematically starting with every package
+        # on truck 1 while keeping initial assignments reasonably balanced.
+        rng = random.Random(seed)
+        shuffled_packages = [replace(package) for package in packages]
+        rng.shuffle(shuffled_packages)
+        assigned: list[list[Package]] = [[] for _ in truck]
+        for index, package in enumerate(shuffled_packages):
+            assigned[index % len(truck)].append(package)
+        states = [
+            random_initial_state(
+                vehicle, package_subset,
+                seed=rng.randrange(2**32),
+                max_attempts=max_attempts,
+            )
+            for vehicle, package_subset in zip(truck, assigned)
+        ]
+        return FleetState(states)
     rng = random.Random(seed)
     state = State(truck, packages).copy()
     for i, package in enumerate(state.packages):

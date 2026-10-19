@@ -329,11 +329,12 @@ def create_state_figure(
     package_labels = []
     hidden_outside = 0
     outside_rows = [row for row in rows if row["status"] != "Di dalam truk"]
-    outside_width = max(
-        (row["oriented_dimensions"][0] for row in outside_rows if row["oriented_dimensions"] is not None),
+    outside_cell = max(
+        (max(row["oriented_dimensions"]) for row in outside_rows if row["oriented_dimensions"] is not None),
         default=1.0,
-    )
-    outside_start_x = max(truck_offsets.values()) + truck_dimensions[0] + 2 * gap
+    ) + gap * 0.5
+    outside_columns = max(1, math.ceil(math.sqrt(len(outside_rows))))
+    outside_start_y = truck_dimensions[1] + gap
     outside_slot = 0
     for row in rows:
         row_truck_index = row.get("truck_index", 1)
@@ -356,9 +357,11 @@ def create_state_figure(
         package_id = row["id"]
         # Invalid/outside coordinates are local to a truck and can overlap a
         # neighboring truck after fleet offsets are applied. Show these packages
-        # in a dedicated staging lane beyond the last truck instead.
+        # in a compact staging grid immediately beside the fleet instead.
         if status != "Di dalam truk":
-            position = (outside_start_x + outside_slot * (outside_width + gap), 0.0, 0.0)
+            column = outside_slot % outside_columns
+            row_index = outside_slot // outside_columns
+            position = (column * outside_cell, outside_start_y + row_index * outside_cell, 0.0)
             offset_x = 0.0
             outside_slot += 1
         else:
@@ -416,8 +419,8 @@ def create_state_figure(
     ]
     if outside_slot:
         truck_labels.append({
-            "x": outside_start_x + max(0, outside_slot - 1) * (outside_width + gap) / 2,
-            "y": 0.0,
+            "x": (outside_columns - 1) * outside_cell / 2,
+            "y": outside_start_y + max(0, math.ceil(outside_slot / outside_columns) - 1) * outside_cell / 2,
             "z": truck_dimensions[2] + padding * 2,
             "text": "Paket belum termuat",
             "showarrow": False,

@@ -148,6 +148,11 @@ def render_state_and_packages(
     problem: Mapping[str, Any],
     run_key: str,
 ) -> None:
+    if is_genetic_algorithm(str(result.get("algorithm", ""))):
+        st.caption(
+            "Untuk GA, Initial State menampilkan satu individu acak dari populasi awal. "
+            "Grafik menampilkan nilai maksimum dan rata-rata seluruh populasi."
+        )
     initial_rows, initial_warning = state_package_rows(problem, result.get("initial_state"))
     final_rows, final_warning = state_package_rows(problem, result.get("final_state"))
     if initial_rows is None or final_rows is None:
@@ -241,6 +246,11 @@ def render_graphs(history: Mapping[str, Any], algorithm: str, run_key: str) -> N
             st.plotly_chart(probability_plot, width="stretch", theme=None, key=f"{run_key}_annealing")
 
     if is_genetic_algorithm(algorithm):
+        st.caption(
+            "Garis maksimum pada iterasi 0 adalah individu terbaik dari populasi acak awal. "
+            "Jika garis rata-rata cepat menyusulnya, populasi telah konvergen; generasi berikutnya "
+            "bisa tetap datar walaupun proses masih berjalan."
+        )
         genetic_plot = genetic_objective_figure(history)
         if genetic_plot is None:
             st.warning("Riwayat objective maksimum/rata-rata populasi GA tidak tersedia.")
