@@ -24,7 +24,7 @@ PARAMETER_DEFAULTS = {
     "random_restart": {"max_restarts": 10, "max_attempts": 50},
     "stochastic": {"nmax": 100},
     "sideways": {"max_sideways": 100},
-    "genetic_algorithm": {"population_size": 40, "iterations": 100},
+    "genetic_algorithm": {"population_size":10, "iterations": 40},
 }
 
 

@@ -328,14 +328,21 @@ def create_state_figure(
     extent_z = [0.0, truck_dimensions[2]]
     package_labels = []
     hidden_outside = 0
+    outside_rows = [row for row in rows if row["status"] != "Di dalam truk"]
+    outside_width = max(
+        (row["oriented_dimensions"][0] for row in outside_rows if row["oriented_dimensions"] is not None),
+        default=1.0,
+    )
+    outside_start_x = max(truck_offsets.values()) + truck_dimensions[0] + 2 * gap
+    outside_slot = 0
     for row in rows:
         row_truck_index = row.get("truck_index", 1)
         if row_truck_index not in truck_offsets:
             continue
         offset_x = truck_offsets[row_truck_index]
-        position = row["position"]
+        source_position = row["position"]
         dimensions = row["oriented_dimensions"]
-        if position is None or dimensions is None:
+        if source_position is None or dimensions is None:
             continue
 
         status = row["status"]
@@ -347,10 +354,20 @@ def create_state_figure(
             hidden_outside += 1
             continue
         package_id = row["id"]
+        # Invalid/outside coordinates are local to a truck and can overlap a
+        # neighboring truck after fleet offsets are applied. Show these packages
+        # in a dedicated staging lane beyond the last truck instead.
+        if status != "Di dalam truk":
+            position = (outside_start_x + outside_slot * (outside_width + gap), 0.0, 0.0)
+            offset_x = 0.0
+            outside_slot += 1
+        else:
+            position = source_position
 
         hover_text = (
             f"<b>{html.escape(package_id)}</b><br>"
-            f"Posisi: {html.escape(str(position))}<br>"
+            f"Posisi lokal: {html.escape(str(source_position))}<br>"
+            f"Truk tujuan: {row_truck_index}<br>"
             f"Berat: {html.escape(str(row['weight']))}<br>"
             f"Value: {html.escape(str(row['value']))}"
         )
@@ -397,6 +414,15 @@ def create_state_figure(
          "showarrow": False, "font": {"size": 14, "color": text_color}}
         for index, offset in truck_offsets.items()
     ]
+    if outside_slot:
+        truck_labels.append({
+            "x": outside_start_x + max(0, outside_slot - 1) * (outside_width + gap) / 2,
+            "y": 0.0,
+            "z": truck_dimensions[2] + padding * 2,
+            "text": "Paket belum termuat",
+            "showarrow": False,
+            "font": {"size": 14, "color": text_color},
+        })
     figure.update_layout(
         template="plotly_dark" if dark else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
