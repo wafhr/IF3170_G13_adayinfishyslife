@@ -248,6 +248,49 @@ def render_graphs(history: Mapping[str, Any], algorithm: str, run_key: str) -> N
             st.plotly_chart(genetic_plot, width="stretch", theme=None, key=f"{run_key}_genetic")
 
 
+def render_algorithm_statistics(
+    result: Mapping[str, Any], history: Mapping[str, Any], algorithm: str,
+) -> None:
+    if is_simulated_annealing(algorithm):
+        st.metric(
+            "Frekuensi stuck", format_number(history.get("stuck_frequency")),
+            help="Jumlah iterasi saat tidak ada neighbor dengan objective lebih tinggi.",
+        )
+    elif is_genetic_algorithm(algorithm):
+        parameters = result.get("parameters")
+        population_size = result.get("population_size")
+        if population_size is None and isinstance(parameters, Mapping):
+            population_size = parameters.get("population_size")
+        st.metric("Ukuran populasi", format_number(population_size))
+    elif algorithm.casefold().replace("-", "_").replace(" ", "_") == "random_restart":
+        st.metric("Jumlah restart", format_number(history.get("restarts")))
+        iterations_per_run = history.get("iterations_per_run")
+        if isinstance(iterations_per_run, list) and iterations_per_run:
+            st.caption("Iterasi per run · Awal = sebelum restart pertama")
+            st.dataframe(
+                [
+                    {
+                        "Run": "Awal" if index == 0 else f"Restart {index}",
+                        "Jumlah iterasi": iterations,
+                    }
+                    for index, iterations in enumerate(iterations_per_run)
+                ],
+                hide_index=True,
+                width=360,
+                height=min(32 + 28 * len(iterations_per_run) + 3, 260),
+                row_height=28,
+                column_config={
+                    "Run": st.column_config.TextColumn("Run", width=180),
+                    "Jumlah iterasi": st.column_config.NumberColumn(
+                        "Jumlah iterasi", width=160, alignment="center", format="%d",
+                    ),
+                },
+                alt="Jumlah iterasi run awal dan setiap restart",
+            )
+        else:
+            st.info("Data iterasi per run tidak tersedia.")
+
+
 def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None:
     algorithm = str(result.get("algorithm", "Tidak diketahui"))
     history = history_from(result)
@@ -264,6 +307,7 @@ def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None
     display_metric(columns[0], f"Nilai objective · {objective_label}", result.get("final_objective"))
     display_metric(columns[1], "Durasi", result.get("duration_seconds", result.get("duration")), " s")
     display_metric(columns[2], "Jumlah iterasi", iterations)
+    render_algorithm_statistics(result, history, algorithm)
 
     state_tab, graph_tab = st.tabs(["State & Paket", "Grafik"])
     with state_tab:
