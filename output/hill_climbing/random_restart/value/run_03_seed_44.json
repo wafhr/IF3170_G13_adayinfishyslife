@@ -17456,6 +17456,6 @@
     "best_run_index": 1,
     "seed": 44
   },
-  "problem_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\output\\Hill Climbing\\HC-RR-03.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/hill_climbing/random_restart/value/run_03_seed_44.json"
 }

@@ -1957,6 +1957,6 @@
     "objective_name": "value"
   },
   "population_size": 20,
-  "problem_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\output\\hasil_20261020_010115_434111.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/genetic_algorithm/value/population_20/iterations_20/trucks_2/run_01_seed_42.json"
 }

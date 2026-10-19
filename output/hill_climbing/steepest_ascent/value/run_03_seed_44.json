@@ -2226,6 +2226,6 @@
     "duration_seconds": 12.145621300005587,
     "stop_reason": "no_improvement"
   },
-  "problem_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\output\\Hill Climbing\\HC-SA-03.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/hill_climbing/steepest_ascent/value/run_03_seed_44.json"
 }

@@ -2432,6 +2432,6 @@
     "sideways_limit_mode": "total",
     "seed": 42
   },
-  "problem_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "C:\\Users\\wafiq\\vscode project\\IF3170_G13_adayinfishyslife\\output\\Hill Climbing\\HC-SM-01.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/hill_climbing/sideways/value/run_01_seed_42.json"
 }

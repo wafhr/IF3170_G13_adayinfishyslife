@@ -3296,6 +3296,6 @@
     "duration_seconds": 3.3083692000000156,
     "stop_reason": "no_improvement"
   },
-  "problem_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\output\\hasil_20261020_005927_823859.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/hill_climbing/steepest_ascent/value/trucks_2/run_01_seed_42.json"
 }

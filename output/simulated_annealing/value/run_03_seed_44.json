@@ -1072,6 +1072,6 @@
     ],
     "stuck_frequency": 0
   },
-  "problem_file": "D:\\Kuliah\\Akademik\\Semester 5\\Inteligensi Artifisial\\Tugas Besar\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "D:\\Kuliah\\Akademik\\Semester 5\\Inteligensi Artifisial\\Tugas Besar\\IF3170_G13_adayinfishyslife\\output\\Simulated Annealing\\Pengujian 3.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/simulated_annealing/value/run_03_seed_44.json"
 }

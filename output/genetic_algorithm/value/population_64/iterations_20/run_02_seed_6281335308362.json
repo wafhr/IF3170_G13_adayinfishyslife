@@ -911,6 +911,6 @@
     "objective_name": "value"
   },
   "population_size": 64,
-  "problem_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\config\\problem.json",
-  "output_file": "D:\\---Kuliah\\Semester 5\\IF3170_G13_adayinfishyslife\\output\\hasil_20261020_003902_522595.json"
+  "problem_file": "config/problem.json",
+  "output_file": "output/genetic_algorithm/value/population_64/iterations_20/run_02_seed_6281335308362.json"
 }

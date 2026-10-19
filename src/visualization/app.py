@@ -25,6 +25,15 @@ from visualization.results import render_result
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def stored_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return str(resolved)
 
 
 def load_problem(path: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -122,8 +131,8 @@ def main() -> None:
                     seed=seed,
                     parameters=parameters,
                 )
-            result["problem_file"] = str(config_path)
-            result["output_file"] = str(output_path)
+            result["problem_file"] = stored_path(config_path)
+            result["output_file"] = stored_path(output_path)
             write_result(output_path, result)
         except (OSError, ValueError, KeyError, TypeError) as error:
             LOGGER.warning("Eksperimen %s gagal: %s", algorithm, error)
