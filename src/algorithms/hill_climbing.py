@@ -1,4 +1,3 @@
-"""Hill-climbing: iterasi menghitung langkah yang diterima, mulai dari 0."""
 
 import random
 from dataclasses import asdict
@@ -132,7 +131,6 @@ def stochastic(
     current = _start(initial_state)
     rng = random.Random(seed)
     values = [objective_value(current, objective)]
-    attempt_values = [values[0]]
     accepted_attempts = []
     invalid_proposals = 0
     reason = "nmax" if current.packages or nmax == 0 else "no_neighbors"
@@ -140,20 +138,22 @@ def stochastic(
         if not current.packages:
             break
         selected = _random_successor(current, rng)
+        current_value = values[-1]
         if selected is None:
             invalid_proposals += 1
         else:
             value = objective_value(selected, objective)
-            if value > values[-1]:
+            if value > current_value:
                 current = selected
-                values.append(value)
+                current_value = value
                 accepted_attempts.append(attempt)
-        attempt_values.append(values[-1])
+        values.append(current_value)
     history = _history(initial_state, current, values, start, reason, objective)
     history.update(
         seed=seed, nmax=nmax, selection="random_operation_proposal",
-        attempts=len(attempt_values) - 1, attempt_objective=attempt_values,
-        accepted_attempts=accepted_attempts, invalid_proposals=invalid_proposals,
+        attempts=len(values) - 1, attempt_objective=values.copy(),
+        accepted_moves=len(accepted_attempts), accepted_attempts=accepted_attempts,
+        invalid_proposals=invalid_proposals,
     )
     return current, history
 
