@@ -283,8 +283,9 @@ def render_algorithm_statistics(
     result: Mapping[str, Any], history: Mapping[str, Any], algorithm: str,
     metric_column: Any = None,
 ) -> None:
+    metric_target = metric_column if metric_column is not None else st
     if is_simulated_annealing(algorithm):
-        st.metric(
+        metric_target.metric(
             "Frekuensi stuck", format_number(history.get("stuck_frequency")),
             help="Jumlah iterasi saat tidak ada neighbor dengan objective lebih tinggi.",
         )
@@ -293,12 +294,9 @@ def render_algorithm_statistics(
         population_size = result.get("population_size")
         if population_size is None and isinstance(parameters, Mapping):
             population_size = parameters.get("population_size")
-        if metric_column is None:
-            st.metric("Ukuran populasi", format_number(population_size))
-        else:
-            display_metric(metric_column, "Ukuran populasi", population_size)
+        metric_target.metric("Ukuran populasi", format_number(population_size))
     elif algorithm.casefold().replace("-", "_").replace(" ", "_") == "random_restart":
-        st.metric("Jumlah restart", format_number(history.get("restarts")))
+        metric_target.metric("Jumlah restart", format_number(history.get("restarts")))
         iterations_per_run = history.get("iterations_per_run")
         if isinstance(iterations_per_run, list) and iterations_per_run:
             st.caption("Iterasi per run · Awal = sebelum restart pertama")
@@ -337,13 +335,20 @@ def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None
     st.header(display_algorithm(algorithm))
 
     is_ga = is_genetic_algorithm(algorithm)
-    columns = st.columns(4 if is_ga else 3)
+    has_algorithm_statistic = (
+        is_ga
+        or is_simulated_annealing(algorithm)
+        or algorithm.casefold().replace("-", "_").replace(" ", "_") == "random_restart"
+    )
+    columns = st.columns(4 if has_algorithm_statistic else 3)
     objective_name = result.get("parameters", {}).get("objective", "value")
     objective_label = OBJECTIVE_LABELS.get(objective_name, "Objective")
     display_metric(columns[0], f"Nilai objective · {objective_label}", result.get("final_objective"))
     display_metric(columns[1], "Durasi", result.get("duration_seconds", result.get("duration")), " s")
     display_metric(columns[2], "Jumlah iterasi", iterations)
-    render_algorithm_statistics(result, history, algorithm, columns[3] if is_ga else None)
+    render_algorithm_statistics(
+        result, history, algorithm, columns[3] if has_algorithm_statistic else None,
+    )
 
     state_tab, graph_tab = st.tabs(["State & Paket", "Grafik"])
     with state_tab:
