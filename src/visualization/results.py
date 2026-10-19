@@ -44,7 +44,9 @@ def display_metric(column: Any, label: str, value: Any, suffix: str = "") -> Non
     column.metric(label, "Tidak tersedia" if value is None else f"{value}{suffix}")
 
 
-def state_metrics(container: Any, rows: list[dict[str, Any]], capacity: Any) -> None:
+def state_metrics(
+    container: Any, rows: list[dict[str, Any]], capacity: Any, truck_count: int = 1,
+) -> None:
     inside = [row for row in rows if row["status"] == "Di dalam truk"]
     total_value = sum(
         value for row in inside
@@ -56,10 +58,30 @@ def state_metrics(container: Any, rows: list[dict[str, Any]], capacity: Any) -> 
         and math.isfinite(weight)
     )
     with container:
-        columns = st.columns(3)
+        columns = st.columns(3 if truck_count == 1 else 2)
         columns[0].metric("Total value", format_number(total_value))
         columns[1].metric("Paket di dalam / total", f"{len(inside)} / {len(rows)}")
-        columns[2].metric("Berat / kapasitas", f"{format_number(loaded_weight)}/{format_number(capacity)}")
+        if truck_count == 1:
+            columns[2].metric("Berat / kapasitas", f"{format_number(loaded_weight)}/{format_number(capacity)}")
+        else:
+            st.dataframe(
+                [
+                    {
+                        "Truk": f"Truk {truck_index}",
+                        "Berat termuat": format_number(sum(
+                            row["weight"] for row in inside
+                            if row.get("truck_index", 1) == truck_index
+                            and isinstance(row["weight"], (int, float))
+                            and not isinstance(row["weight"], bool)
+                            and math.isfinite(row["weight"])
+                        )),
+                        "Kapasitas": format_number(capacity),
+                    }
+                    for truck_index in range(1, truck_count + 1)
+                ],
+                hide_index=True,
+                width="stretch",
+            )
 
 
 def table_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -190,8 +212,7 @@ def render_state_and_packages(
 
     state_label = "Initial" if mode == "Initial" else "Final"
     state_value = result.get("initial_state") if mode == "Initial" else result.get("final_state")
-    fleet_capacity = capacity * truck_count if isinstance(capacity, (int, float)) else capacity
-    state_metrics(st.container(), state_rows, fleet_capacity)
+    state_metrics(st.container(), state_rows, capacity, truck_count)
     chart_column, detail_column = st.columns([3, 1])
     render_state_chart(
         chart_column, f"{state_label} State", f"{run_key}_{state_label.lower()}_state", problem,
@@ -260,9 +281,11 @@ def render_graphs(history: Mapping[str, Any], algorithm: str, run_key: str) -> N
 
 def render_algorithm_statistics(
     result: Mapping[str, Any], history: Mapping[str, Any], algorithm: str,
+    metric_column: Any = None,
 ) -> None:
+    metric_target = metric_column if metric_column is not None else st
     if is_simulated_annealing(algorithm):
-        st.metric(
+        metric_target.metric(
             "Frekuensi stuck", format_number(history.get("stuck_frequency")),
             help="Jumlah iterasi saat tidak ada neighbor dengan objective lebih tinggi.",
         )
@@ -271,9 +294,9 @@ def render_algorithm_statistics(
         population_size = result.get("population_size")
         if population_size is None and isinstance(parameters, Mapping):
             population_size = parameters.get("population_size")
-        st.metric("Ukuran populasi", format_number(population_size))
+        metric_target.metric("Ukuran populasi", format_number(population_size))
     elif algorithm.casefold().replace("-", "_").replace(" ", "_") == "random_restart":
-        st.metric("Jumlah restart", format_number(history.get("restarts")))
+        metric_target.metric("Jumlah restart", format_number(history.get("restarts")))
         iterations_per_run = history.get("iterations_per_run")
         if isinstance(iterations_per_run, list) and iterations_per_run:
             st.caption("Iterasi per run · Awal = sebelum restart pertama")
@@ -311,13 +334,21 @@ def render_result(result: Mapping[str, Any], problem: Mapping[str, Any]) -> None
         iterations = len(history["objective"])
     st.header(display_algorithm(algorithm))
 
-    columns = st.columns(3)
+    is_ga = is_genetic_algorithm(algorithm)
+    has_algorithm_statistic = (
+        is_ga
+        or is_simulated_annealing(algorithm)
+        or algorithm.casefold().replace("-", "_").replace(" ", "_") == "random_restart"
+    )
+    columns = st.columns(4 if has_algorithm_statistic else 3)
     objective_name = result.get("parameters", {}).get("objective", "value")
     objective_label = OBJECTIVE_LABELS.get(objective_name, "Objective")
     display_metric(columns[0], f"Nilai objective · {objective_label}", result.get("final_objective"))
     display_metric(columns[1], "Durasi", result.get("duration_seconds", result.get("duration")), " s")
     display_metric(columns[2], "Jumlah iterasi", iterations)
-    render_algorithm_statistics(result, history, algorithm)
+    render_algorithm_statistics(
+        result, history, algorithm, columns[3] if has_algorithm_statistic else None,
+    )
 
     state_tab, graph_tab = st.tabs(["State & Paket", "Grafik"])
     with state_tab:

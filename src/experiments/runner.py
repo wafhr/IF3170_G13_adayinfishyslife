@@ -75,10 +75,9 @@ def run_experiment(
     if type(truck_count) is not int or truck_count < 1:
         raise ValueError("Jumlah truk harus berupa bilangan bulat minimal 1.")
     trucks = [Truck(truck.dimensions, truck.max_capacity) for _ in range(truck_count)]
-    initial_state = random_initial_state(trucks if truck_count > 1 else truck, packages, seed=seed)
-
     random.seed(seed)
     start = perf_counter()
+    initial_state = random_initial_state(trucks if truck_count > 1 else truck, packages, seed=seed)
     final_state, history = algorithm(initial_state, **parameters)
     duration = perf_counter() - start
 
