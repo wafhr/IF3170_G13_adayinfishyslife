@@ -4,10 +4,28 @@ import os
 import tempfile
 from pathlib import Path
 
-from core.state import State
+from core.state import FleetState, State
 
 
-def state_data(state: State) -> dict:
+def state_data(state: State | FleetState) -> dict:
+    if isinstance(state, FleetState):
+        return {
+            "truck_count": len(state.trucks),
+            "trucks": [
+                {"truck_index": index + 1, "packages": [
+                    {"id": p.id, "eta": p.eta, "position": list(p.position),
+                     "orientation": p.orientation, "inside": truck_state.is_inside(p)}
+                    for p in truck_state.packages
+                ]}
+                for index, truck_state in enumerate(state.trucks)
+            ],
+            "packages": [
+                {"id": p.id, "eta": p.eta, "position": list(p.position),
+                 "orientation": p.orientation, "truck_index": index + 1,
+                 "inside": truck_state.is_inside(p)}
+                for index, truck_state in enumerate(state.trucks) for p in truck_state.packages
+            ],
+        }
     return {
         "packages": [
             {
@@ -24,8 +42,8 @@ def state_data(state: State) -> dict:
 def result_data(
     algorithm: str,
     run_name: str,
-    initial_state: State,
-    final_state: State,
+    initial_state: State | FleetState,
+    final_state: State | FleetState,
     final_objective: float,
     duration_seconds: float,
     parameters: dict,

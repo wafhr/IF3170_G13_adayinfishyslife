@@ -9,7 +9,7 @@ from algorithms.hill_climbing import random_restart, sideways, steepest_ascent, 
 from algorithms.simulated_annealing import simulated_annealing
 from core.evaluation import objective_value
 from core.operators import random_initial_state
-from core.state import Package, State, Truck
+from core.state import FleetState, Package, State, Truck
 from experiments.output import result_data
 
 
@@ -71,7 +71,11 @@ def run_experiment(
     parameters: dict,
 ) -> dict:
     truck, packages = load_problem(config_path)
-    initial_state = random_initial_state(truck, packages, seed=seed)
+    truck_count = parameters.pop("truck_count", 1)
+    if type(truck_count) is not int or truck_count < 1:
+        raise ValueError("Jumlah truk harus berupa bilangan bulat minimal 1.")
+    trucks = [Truck(truck.dimensions, truck.max_capacity) for _ in range(truck_count)]
+    initial_state = random_initial_state(trucks if truck_count > 1 else truck, packages, seed=seed)
 
     random.seed(seed)
     start = perf_counter()
@@ -85,7 +89,7 @@ def run_experiment(
         final_state=final_state,
         final_objective=objective_value(final_state, parameters.get("objective", "value")),
         duration_seconds=duration,
-        parameters={"seed": seed, **parameters},
+        parameters={"seed": seed, "truck_count": truck_count, **parameters},
         history=history,
     )
 
@@ -97,11 +101,15 @@ def run_genetic_experiment(
     population_size: int,
     iterations: int,
     objective: str = "value",
+    truck_count: int = 1,
 ) -> dict:
     truck, packages = load_problem(config_path)
+    if type(truck_count) is not int or truck_count < 1:
+        raise ValueError("Jumlah truk harus berupa bilangan bulat minimal 1.")
+    trucks = [Truck(truck.dimensions, truck.max_capacity) for _ in range(truck_count)]
     elite_size = min(2, population_size - 1)
     result = genetic_algorithm(
-        truck,
+        trucks if truck_count > 1 else truck,
         packages,
         population_size=population_size,
         iterations=iterations,
@@ -122,7 +130,7 @@ def run_genetic_experiment(
         final_state=result["final_state"],
         final_objective=result["final_value"],
         duration_seconds=result["duration_seconds"],
-        parameters={"seed": seed, "population_size": population_size, "iterations": iterations, "elite_size": elite_size, "objective": objective},
+        parameters={"seed": seed, "population_size": population_size, "iterations": iterations, "elite_size": elite_size, "objective": objective, "truck_count": truck_count},
         history=history,
     )
     output["population_size"] = population_size
@@ -144,6 +152,7 @@ def run_selected_experiment(
             population_size=parameters["population_size"],
             iterations=parameters["iterations"],
             objective=parameters.get("objective", "value"),
+            truck_count=parameters.get("truck_count", 1),
         )
 
     algorithm = ALGORITHMS.get(algorithm_name)

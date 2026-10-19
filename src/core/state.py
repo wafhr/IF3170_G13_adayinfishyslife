@@ -101,3 +101,42 @@ class State:
                             raise ValueError(f"Paket {package.id} overlap dengan paket lain.")
                         cells[x, y, z] = package.id
         return cells
+
+
+@dataclass
+class FleetState:
+    """Joint assignment for a fleet; every package belongs to exactly one truck state."""
+    trucks: list[State]
+
+    def __post_init__(self):
+        if not self.trucks:
+            raise ValueError("Armada harus memiliki minimal satu truk.")
+        ids = [p.id for truck_state in self.trucks for p in truck_state.packages]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Setiap paket hanya boleh ditugaskan ke satu truk.")
+
+    @property
+    def packages(self) -> list[Package]:
+        return [p for truck_state in self.trucks for p in truck_state.packages]
+
+    def copy(self) -> "FleetState":
+        return FleetState([state.copy() for state in self.trucks])
+
+    def locate(self, package_id: str) -> tuple[State, int]:
+        for truck_state in self.trucks:
+            for index, package in enumerate(truck_state.packages):
+                if package.id == package_id:
+                    return truck_state, index
+        raise KeyError(package_id)
+
+    def is_inside(self, package: Package) -> bool:
+        state, _ = self.locate(package.id)
+        return state.is_inside(package)
+
+    def is_outside(self, package: Package) -> bool:
+        state, _ = self.locate(package.id)
+        return state.is_outside(package)
+
+    def bounds(self, package: Package):
+        state, _ = self.locate(package.id)
+        return state.bounds(package)

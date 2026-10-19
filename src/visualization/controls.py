@@ -24,7 +24,7 @@ PARAMETER_DEFAULTS = {
     "random_restart": {"max_restarts": 10, "max_attempts": 50},
     "stochastic": {"nmax": 100},
     "sideways": {"max_sideways": 100},
-    "genetic_algorithm": {"population_size": 40, "iterations": 100},
+    "genetic_algorithm": {"population_size":10, "iterations": 40},
 }
 
 
@@ -85,6 +85,7 @@ def reset_settings() -> None:
     st.session_state["run_algorithm"] = "steepest_ascent"
     st.session_state["objective_function"] = "value"
     st.session_state["run_seed"] = SEED_DEFAULT
+    st.session_state["truck_count"] = 1
     for algorithm, defaults in PARAMETER_DEFAULTS.items():
         for parameter, value in defaults.items():
             st.session_state[f"parameter_{algorithm}_{parameter}"] = value
@@ -134,6 +135,12 @@ def run_controls() -> tuple[str, str, str, int, dict[str, Any], bool]:
                 clear_last_run()
     problem_path = st.session_state["problem_path"]
     render_selected_file(problem_path)
+    st.session_state.setdefault("truck_count", 1)
+    truck_count = st.sidebar.number_input(
+        "Jumlah truk", min_value=1, step=1, key="truck_count",
+        on_change=clear_last_run,
+        help="Semua truk memakai dimensi dan kapasitas dari konfigurasi problem.",
+    )
 
     st.sidebar.subheader("Algoritma")
     algorithm = st.sidebar.selectbox(
@@ -147,6 +154,7 @@ def run_controls() -> tuple[str, str, str, int, dict[str, Any], bool]:
 
     st.session_state.setdefault("run_seed", SEED_DEFAULT)
     parameters: dict[str, Any] = {}
+    parameters["truck_count"] = int(truck_count)
     parameters["objective"] = st.sidebar.selectbox(
         "Fungsi objective",
         tuple(OBJECTIVE_LABELS),

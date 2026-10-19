@@ -87,17 +87,19 @@ def _add_truck_wireframe(
     figure: go.Figure,
     truck_dimensions: tuple[float, float, float],
     color: str,
+    offset_x: float = 0,
+    name: str = "Container truk",
 ) -> None:
     width, length, height = truck_dimensions
     corners = [
-        (0, 0, 0),
-        (width, 0, 0),
-        (width, length, 0),
-        (0, length, 0),
-        (0, 0, height),
-        (width, 0, height),
-        (width, length, height),
-        (0, length, height),
+        (offset_x, 0, 0),
+        (offset_x + width, 0, 0),
+        (offset_x + width, length, 0),
+        (offset_x, length, 0),
+        (offset_x, 0, height),
+        (offset_x + width, 0, height),
+        (offset_x + width, length, height),
+        (offset_x, length, height),
     ]
     edges = [
         (0, 1), (1, 2), (2, 3), (3, 0),
@@ -121,7 +123,7 @@ def _add_truck_wireframe(
             z=z_values,
             mode="lines",
             line={"color": color, "width": 5},
-            name="Container truk",
+            name=name,
             hoverinfo="skip",
         )
     )
@@ -136,8 +138,10 @@ def _add_package_box(
     opacity: float,
     hover_text: str,
     selected: bool = False,
+    offset_x: float = 0,
 ) -> None:
     x0, y0, z0 = position
+    x0 += offset_x
     width, length, height = dimensions
     x1, y1, z1 = x0 + width, y0 + length, z0 + height
 
@@ -228,6 +232,7 @@ def _state_for_view(problem: Any, state: Any) -> tuple[dict[str, Any] | None, st
         merged["position"] = placement.get("position") if placement is not None else None
         merged["orientation"] = placement.get("orientation") if placement is not None else None
         merged["isFragile"] = package.get("is_fragile", False)
+        merged["truck_index"] = placement.get("truck_index", 1) if placement is not None else 1
         merged_packages.append(merged)
 
     warning = None
@@ -275,6 +280,7 @@ def state_package_rows(problem: Any, state: Any) -> tuple[list[dict[str, Any]] |
             "eta": package.get("eta"),
             "status": status,
             "index": index,
+            "truck_index": package.get("truck_index", 1),
         })
 
     if invalid_count:
@@ -291,6 +297,7 @@ def create_state_figure(
     package_filter: str = "Semua",
     selected_package_id: str | None = None,
     height: int = 440,
+    truck_index: int | None = None,
 ) -> tuple[go.Figure | None, str | None]:
     rows, warning = state_package_rows(problem, state)
     if rows is None:
@@ -307,17 +314,35 @@ def create_state_figure(
     figure = go.Figure()
     text_color = "#f5f5f5" if dark else "#111111"
     truck_color = "#f5f5f5" if dark else "#374151"
-    _add_truck_wireframe(figure, truck_dimensions, truck_color)
+    truck_count = state.get("truck_count", 1) if isinstance(state, Mapping) else 1
+    if truck_index is None and truck_count > 1:
+        height = max(height, min(900, 360 + 90 * truck_count))
+    displayed_trucks = range(1, truck_count + 1) if truck_index is None else (truck_index,)
+    gap = truck_dimensions[0] * 0.25
+    truck_offsets = {index: (index - 1) * (truck_dimensions[0] + gap) for index in displayed_trucks}
+    for index, offset in truck_offsets.items():
+        _add_truck_wireframe(figure, truck_dimensions, truck_color, offset, f"Truk {index}")
 
-    extent_x = [0.0, truck_dimensions[0]]
+    extent_x = [min(truck_offsets.values()), max(truck_offsets.values()) + truck_dimensions[0]]
     extent_y = [0.0, truck_dimensions[1]]
     extent_z = [0.0, truck_dimensions[2]]
     package_labels = []
     hidden_outside = 0
+    outside_rows = [row for row in rows if row["status"] != "Di dalam truk"]
+    outside_width = max(
+        (row["oriented_dimensions"][0] for row in outside_rows if row["oriented_dimensions"] is not None),
+        default=1.0,
+    )
+    outside_start_x = max(truck_offsets.values()) + truck_dimensions[0] + 2 * gap
+    outside_slot = 0
     for row in rows:
-        position = row["position"]
+        row_truck_index = row.get("truck_index", 1)
+        if row_truck_index not in truck_offsets:
+            continue
+        offset_x = truck_offsets[row_truck_index]
+        source_position = row["position"]
         dimensions = row["oriented_dimensions"]
-        if position is None or dimensions is None:
+        if source_position is None or dimensions is None:
             continue
 
         status = row["status"]
@@ -329,10 +354,20 @@ def create_state_figure(
             hidden_outside += 1
             continue
         package_id = row["id"]
+        # Invalid/outside coordinates are local to a truck and can overlap a
+        # neighboring truck after fleet offsets are applied. Show these packages
+        # in a dedicated staging lane beyond the last truck instead.
+        if status != "Di dalam truk":
+            position = (outside_start_x + outside_slot * (outside_width + gap), 0.0, 0.0)
+            offset_x = 0.0
+            outside_slot += 1
+        else:
+            position = source_position
 
         hover_text = (
             f"<b>{html.escape(package_id)}</b><br>"
-            f"Posisi: {html.escape(str(position))}<br>"
+            f"Posisi lokal: {html.escape(str(source_position))}<br>"
+            f"Truk tujuan: {row_truck_index}<br>"
             f"Berat: {html.escape(str(row['weight']))}<br>"
             f"Value: {html.escape(str(row['value']))}"
         )
@@ -348,9 +383,10 @@ def create_state_figure(
             opacity=0.98 if is_selected else (0.22 if other_selected else (0.82 if status == "Di dalam truk" else 0.45)),
             hover_text=hover_text,
             selected=is_selected,
+            offset_x=offset_x,
         )
         package_labels.append({
-            "x": position[0] + dimensions[0] / 2,
+            "x": offset_x + position[0] + dimensions[0] / 2,
             "y": position[1] + dimensions[1] / 2,
             "z": position[2] + dimensions[2] / 2,
             "text": html.escape(package_id),
@@ -367,11 +403,26 @@ def create_state_figure(
             "captureevents": False,
         })
 
-        extent_x.extend([position[0], position[0] + dimensions[0]])
+        extent_x.extend([offset_x + position[0], offset_x + position[0] + dimensions[0]])
         extent_y.extend([position[1], position[1] + dimensions[1]])
         extent_z.extend([position[2], position[2] + dimensions[2]])
 
     padding = max(*truck_dimensions, 1.0) * 0.08
+    truck_labels = [
+        {"x": offset + truck_dimensions[0] / 2, "y": truck_dimensions[1] / 2,
+         "z": truck_dimensions[2] + padding * 2, "text": f"Truk {index}",
+         "showarrow": False, "font": {"size": 14, "color": text_color}}
+        for index, offset in truck_offsets.items()
+    ]
+    if outside_slot:
+        truck_labels.append({
+            "x": outside_start_x + max(0, outside_slot - 1) * (outside_width + gap) / 2,
+            "y": 0.0,
+            "z": truck_dimensions[2] + padding * 2,
+            "text": "Paket belum termuat",
+            "showarrow": False,
+            "font": {"size": 14, "color": text_color},
+        })
     figure.update_layout(
         template="plotly_dark" if dark else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -385,7 +436,7 @@ def create_state_figure(
         },
         scene={
             "bgcolor": "rgba(0,0,0,0)",
-            "annotations": package_labels,
+            "annotations": [*truck_labels, *package_labels],
             "xaxis": {"title": "X / Width", "range": [min(extent_x) - padding, max(extent_x) + padding]},
             "yaxis": {"title": "Y / Length", "range": [min(extent_y) - padding, max(extent_y) + padding]},
             "zaxis": {"title": "Z / Height", "range": [min(extent_z) - padding, max(extent_z) + padding]},
