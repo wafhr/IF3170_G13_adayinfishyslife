@@ -127,9 +127,9 @@ def _crossover(
         trucks = [State(s.truck, []) for s in first.trucks]
         for package in first.packages:
             parent = first if rng.random() < 0.5 else second
-            source, _ = parent.locate(package.id)
+            source, package_index = parent.locate(package.id)
             truck_index = next(i for i, candidate in enumerate(parent.trucks) if candidate is source)
-            inherited = replace(package)
+            inherited = replace(source.packages[package_index])
             trucks[truck_index].packages.append(inherited)
         child = FleetState(trucks)
         return child if is_valid(child) else (first.copy() if rng.random() < 0.5 else second.copy())

@@ -54,6 +54,15 @@ def main() -> None:
         h3 { font-size: 1.05rem; line-height: 1.4; }
         [data-testid="stMetricLabel"] { font-size: 0.85rem; }
         [data-testid="stMetricValue"] { font-size: 1.45rem; }
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] button { display: none !important; }
+        [data-testid="stSidebar"] [data-testid="InputInstructions"] {
+            position: absolute !important; width: 1px !important; height: 1px !important;
+            padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+            clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
+            min-height: 2.6rem; font-size: 0.95rem;
+        }
         .selected-file { display: flex; flex-direction: column; gap: 0.1rem; margin: 0.4rem 0 0.8rem; padding: 0.55rem 0.7rem; border: 1px solid rgba(128, 128, 128, 0.24); border-radius: 0.55rem; overflow: hidden; }
         .selected-file strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; font-weight: 600; }
         .selected-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.65; font-size: 0.74rem; }
